@@ -1,0 +1,3 @@
+#!/bin/sh
+# blocks the commit on any gitleaks finding in staged changes
+exec gitleaks git --pre-commit --staged --redact -v

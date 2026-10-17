@@ -1,0 +1,76 @@
+import ast
+from pathlib import Path
+
+HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
+
+
+def _route(decorator: ast.expr) -> dict | None:
+    # matches @app.post("/x") / @router.get("/x", ...)
+    if not (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)):
+        return None
+    method = decorator.func.attr
+    if method not in HTTP_METHODS or not decorator.args:
+        return None
+    path = decorator.args[0]
+    if not (isinstance(path, ast.Constant) and isinstance(path.value, str)):
+        return None
+    return {"method": method.upper(), "path": path.value}
+
+
+def _params(args: ast.arguments) -> list[dict]:
+    positional = args.posonlyargs + args.args
+    defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    pairs = list(zip(positional, defaults)) + list(zip(args.kwonlyargs, args.kw_defaults))
+    params = [
+        {
+            "name": a.arg,
+            "annotation": ast.unparse(a.annotation) if a.annotation else None,
+            "default": ast.unparse(d) if d is not None else None,
+        }
+        for a, d in pairs
+        if a.arg not in ("self", "cls")
+    ]
+    for star in (args.vararg, args.kwarg):
+        if star:
+            params.append({"name": star.arg, "annotation": None, "default": None})
+    return params
+
+
+def chunk_code(filepath: str | Path, root: str | Path | None = None) -> list[dict]:
+    """One chunk per function. ID is `<path relative to root>::<name>`;
+    nested functions and methods use dotted names (`outer.inner`)."""
+    path = Path(filepath)
+    rel = path.relative_to(root).as_posix() if root else path.as_posix()
+    tree = ast.parse(path.read_text())
+    chunks: list[dict] = []
+
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = prefix + child.name
+                routes = [r for d in child.decorator_list if (r := _route(d))]
+                chunks.append({
+                    "id": f"{rel}::{name}",
+                    "name": name,
+                    "file": rel,
+                    "is_async": isinstance(child, ast.AsyncFunctionDef),
+                    "decorators": [ast.unparse(d) for d in child.decorator_list],
+                    "routes": routes,
+                    "params": _params(child.args),
+                    "signature": ast.unparse(child.args),
+                    "docstring": ast.get_docstring(child) or "",
+                    "source": ast.unparse(child),
+                })
+                visit(child, name + ".")
+            elif isinstance(child, ast.ClassDef):
+                visit(child, prefix + child.name + ".")
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return chunks
+
+
+def chunk_code_dir(root: str | Path) -> list[dict]:
+    root = Path(root)
+    return [c for f in sorted(root.rglob("*.py")) for c in chunk_code(f, root.parent)]

@@ -1,0 +1,10 @@
+openai
+anthropic
+google-genai
+chromadb
+gitpython
+pygithub
+python-dotenv
+pydantic
+pytest
+-e .

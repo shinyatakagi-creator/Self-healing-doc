@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+venv/
+.chroma/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+drift_report.json
+.DS_Store
