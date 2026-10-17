@@ -5,13 +5,15 @@ from shd.detect import DriftResult
 
 
 def doc_statuses(doc_chunks: list[dict], results: list[DriftResult]) -> list[dict]:
-    """One row per doc section. STALE if any check flagged it; ERROR if a check failed and nothing flagged it."""
+    """One row per doc section. STALE: a reference flag or an LLM flag quoting a code element.
+    REVIEW ("worth a look"): only LLM flags with prose-only claims. ERROR: a check failed and nothing flagged it."""
     rows = []
     for doc in doc_chunks:
         mine = [r for r in results if r.doc_id == doc["id"]]
-        stale = [r for r in mine if r.is_stale]
-        status = "STALE" if stale else "ERROR" if any(r.error for r in mine) else "OK"
-        rows.append({"doc_id": doc["id"], "status": status, "results": stale or mine})
+        stale = [r for r in mine if r.tier == "stale"]
+        review = [r for r in mine if r.tier == "review"]
+        status = "STALE" if stale else "REVIEW" if review else "ERROR" if any(r.error for r in mine) else "OK"
+        rows.append({"doc_id": doc["id"], "status": status, "results": stale or review or mine})
     return rows
 
 
@@ -30,7 +32,7 @@ def coverage(doc_chunks: list[dict], results: list[DriftResult]) -> dict:
 
 def print_summary(doc_chunks: list[dict], results: list[DriftResult]) -> None:
     for row in doc_statuses(doc_chunks, results):
-        print(f"{row['status']:5}  {row['doc_id']}")
+        print(f"{row['status']:6}  {row['doc_id']}")
         if row["status"] == "OK":
             continue
         for r in row["results"]:

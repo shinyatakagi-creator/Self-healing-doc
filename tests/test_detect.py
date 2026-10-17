@@ -362,3 +362,84 @@ def test_check_drift_passes_context_to_verifier(tmp_path):
     check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), Canned(claim_verdict(doc_claim="`POST /v1/batches` runs")), verifier=Spy(),
                 identifiers=code_identifiers_dir(FIXTURES / "12_non_function_symbols" / "src"))
     assert got and "max_batch_size = 100" in got[0] and "Settings: retry_limit: int = 3" in got[0]
+
+
+# --- Stage 6: confidence, verifier rule, tiers ---
+
+from shd.detect import names_code_element, tier_doc_ids
+from shd.report import doc_statuses
+
+
+def test_empty_confidence_is_low_when_not_stale():
+    v = parse_verdict('{"is_stale": false, "reason": "", "suggested_fix": "", "confidence": ""}')
+    assert v.confidence == "low" and not v.is_stale
+
+
+def test_empty_confidence_still_invalid_when_stale():
+    with pytest.raises(Exception):
+        parse_verdict('{"is_stale": true, "reason": "r", "suggested_fix": "f", "confidence": ""}')
+
+
+def test_empty_confidence_does_not_cost_a_retry():
+    complete = stub('{"is_stale": false, "reason": "", "suggested_fix": "", "confidence": ""}')
+    assert LLMDriftChecker(complete).check(CODE, DOC).confidence == "low"
+    assert len(complete.calls) == 1
+
+
+def test_prompts_describe_new_rules():
+    seen = []
+    LLMVerifier(lambda p: seen.append(p) or "no").verify("claim", "fact")
+    LLMDriftChecker(lambda p: seen.append(p) or GOOD).check(CODE, DOC)
+    assert "NOT a contradiction" in seen[0] and "says 10 and the code default is 20" in seen[0]
+    assert 'empty confidence is read as "low"' in seen[1]
+
+
+@pytest.mark.parametrize("claim,expected", [
+    ("`limit` (optional, default 10)", True),
+    ("`POST /v1/search` creates", True),
+    ("POST to /v1/search with text", True),
+    ("Call `old_helper(x)` first", True),
+    ("By default the search returns at most ten results", False),
+    ("Large result sets are split into pages and/or truncated", False),
+    ("", False),
+])
+def test_names_code_element(claim, expected):
+    assert names_code_element(claim) is expected
+
+
+def tiered(tmp_path, claim):
+    code, docs, _ = load("03_changed_default")
+    (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()),
+                       Canned(claim_verdict(doc_claim=claim)))
+    return r
+
+
+def test_llm_flag_naming_code_element_is_stale_tier(tmp_path):
+    r = tiered(tmp_path, "`limit` (optional, default 10)")
+    assert r.is_stale and r.tier == "stale"
+
+
+def test_llm_flag_with_prose_claim_is_review_tier(tmp_path):
+    r = tiered(tmp_path, "default 10")
+    assert r.is_stale and r.tier == "review"
+
+
+def test_reference_flags_are_stale_tier_and_unflagged_have_no_tier(tmp_path):
+    code, docs, _ = load("01_wrong_path_missing_param")
+    res = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), FakeDriftChecker())
+    assert [r.tier for r in res] == ["stale"]
+    code, docs, _ = load("05_clean_match")
+    (ok,) = check_drift(code, docs, DocIndex(tmp_path / "d", FakeEmbedder()), FakeDriftChecker())
+    assert ok.tier is None
+
+
+def test_tier_doc_ids_and_report_status():
+    from shd.detect import DriftResult
+
+    res = [DriftResult(code_id="c", doc_id="a", detection="llm", is_stale=True, tier="review"),
+           DriftResult(code_id="c", doc_id="b", detection="llm", is_stale=True, tier="stale"),
+           DriftResult(code_id="c", doc_id="b", detection="llm", is_stale=True, tier="review"),
+           DriftResult(code_id="c", doc_id="c", detection="llm", is_stale=False)]
+    assert tier_doc_ids(res, "stale") == {"b"} and tier_doc_ids(res, "review") == {"a"}
+    status = {r["doc_id"]: r["status"] for r in doc_statuses([{"id": i} for i in "abcd"], res)}
+    assert status == {"a": "REVIEW", "b": "STALE", "c": "OK", "d": "OK"}

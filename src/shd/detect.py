@@ -3,8 +3,9 @@ import os
 import re
 from typing import Callable, Literal, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 
+from shd.chunk_docs import extract_refs
 from shd.index import DocIndex
 
 PROMPT = """You check whether documentation accurately describes code.
@@ -23,7 +24,7 @@ describes the same behavior in different words, it is not stale. Omitting minor 
 Respond with JSON only:
 {{"is_stale": true|false, "reason": "...", "suggested_fix": "...", "confidence": "high"|"medium"|"low", "doc_claim": "...", "code_fact": "..."}}
 doc_claim is a verbatim quote from the documentation section that contradicts the code. code_fact is the fact in the code that it contradicts.
-Use empty strings for reason, suggested_fix, doc_claim and code_fact when is_stale is false."""
+Use empty strings for reason, suggested_fix, doc_claim and code_fact when is_stale is false. An empty confidence is read as "low" when is_stale is false."""
 
 DEFAULT_MODELS = {"openai": "gpt-4o", "anthropic": "claude-sonnet-5-5", "gemini": "gemini-2.5-flash"}
 
@@ -36,6 +37,13 @@ class Verdict(BaseModel):
     doc_claim: str = ""
     code_fact: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def empty_confidence_is_low_when_not_stale(cls, data):
+        if isinstance(data, dict) and data.get("confidence") == "" and data.get("is_stale") is False:
+            return {**data, "confidence": "low"}
+        return data
+
 
 class DriftResult(BaseModel):
     code_id: str | None
@@ -47,6 +55,7 @@ class DriftResult(BaseModel):
     confidence: str = ""
     doc_claim: str = ""
     code_fact: str = ""
+    tier: Literal["stale", "review"] | None = None  # set on accepted flags only
     filtered: bool = False  # LLM said stale but the flag failed the claim check and was discarded
     verifier_rejected: bool = False  # flag passed the claim check but the verifier said no
     error: str | None = None
@@ -99,6 +108,11 @@ class Verifier(Protocol):
 VERIFY_PROMPT = """Documentation claim: {doc_claim}
 Code fact: {code_fact}
 
+Rule: a claim that the code lacks a feature, or does not implement or mention something, is NOT a contradiction
+unless the documentation explicitly names a code element (route, function, parameter, config key) that the code
+lacks or has changed. A conflicting value (for example the documentation says 10 and the code default is 20)
+is a contradiction.
+
 {context_block}Does the first directly contradict the second? Answer yes or no."""
 
 
@@ -134,6 +148,16 @@ def _norm(text: str) -> str:
 def claim_is_grounded(v: Verdict, doc_chunk: dict) -> bool:
     """A stale flag only counts if it quotes the doc and names the code fact it contradicts."""
     return bool(v.doc_claim.strip() and v.code_fact.strip() and _norm(v.doc_claim) in _norm(doc_chunk["content"]))
+
+
+BARE_ROUTE = re.compile(r"(?:^|[\s`(])/[\w{]")
+
+
+def names_code_element(doc_claim: str) -> bool:
+    """True if the quoted claim points at a code element: a backticked name, call, path or config key,
+    or a bare /route. Prose-only claims ("returns at most ten results") are False."""
+    refs = extract_refs(doc_claim)
+    return any(refs.values()) or bool(BARE_ROUTE.search(doc_claim))
 
 
 def parse_verdict(text: str) -> Verdict:
@@ -287,7 +311,7 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
         if missing := check_references(doc, code_chunks, identifiers):
             flagged.add(doc["id"])
             results.append(DriftResult(
-                code_id=None, doc_id=doc["id"], detection="reference", is_stale=True,
+                code_id=None, doc_id=doc["id"], detection="reference", is_stale=True, tier="stale",
                 reason="doc references no longer in code: " + ", ".join(missing),
                 suggested_fix="remove or update these references", confidence="high",
             ))
@@ -299,8 +323,10 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
             filtered = v.is_stale and not claim_is_grounded(v, doc)
             rejected = (v.is_stale and not filtered and verifier is not None
                         and not verifier.verify(v.doc_claim, v.code_fact, code.get("context", "")))
+            accepted = v.is_stale and not (filtered or rejected)
             results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm",
-                                       **{**v.model_dump(), "is_stale": v.is_stale and not (filtered or rejected)},
+                                       **{**v.model_dump(), "is_stale": accepted},
+                                       tier=("stale" if names_code_element(v.doc_claim) else "review") if accepted else None,
                                        filtered=filtered, verifier_rejected=rejected))
         except DriftError as e:
             results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm", is_stale=False, error=str(e)))
@@ -308,4 +334,11 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
 
 
 def stale_doc_ids(results: list[DriftResult]) -> set[str]:
+    """Docs flagged in either tier."""
     return {r.doc_id for r in results if r.is_stale}
+
+
+def tier_doc_ids(results: list[DriftResult], tier: str) -> set[str]:
+    """Docs in a tier. A doc with flags in both tiers counts as "stale" only."""
+    stale = {r.doc_id for r in results if r.tier == "stale"}
+    return stale if tier == "stale" else {r.doc_id for r in results if r.tier == "review"} - stale
