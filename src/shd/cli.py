@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -72,6 +73,9 @@ def main(argv: list[str] | None = None) -> None:
         ap.error("use either --fixture, or both --code and --docs")
     if args.base and args.fixture:
         ap.error("--base needs --code and --docs, not --fixture")
+
+    if not args.fake and not os.getenv("OPENAI_API_KEY"):  # embeddings always use OpenAI
+        sys.exit("error: OPENAI_API_KEY is not set")
 
     budget = CallBudget(args.max_calls) if args.max_calls else None
     wrap = budget.wrap if budget else (lambda f: f)

@@ -67,3 +67,22 @@ def test_paths_outside_git_use_common_parent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path.parent)
     c, d, _ = chunks_from_paths(code, docs, base_dir(code + docs))
     assert c[0]["id"] == "src/a.py::f" and d[0]["id"] == "README.md::F"
+
+
+def test_cli_missing_openai_key_is_a_one_line_error(monkeypatch, capsys):
+    import pytest
+    from pathlib import Path
+
+    monkeypatch.setattr("shd.cli.load_dotenv", lambda: None)  # don't pick up the repo's real .env
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(SystemExit) as e:
+        main(["check", "--fixture", str(Path(__file__).parent.parent / "fixtures" / "03_changed_default")])
+    assert e.value.code == "error: OPENAI_API_KEY is not set"
+
+
+def test_cli_fake_mode_needs_no_key(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    main(["check", "--fixture", str(Path(__file__).parent.parent / "fixtures" / "05_clean_match"),
+          "--out", str(tmp_path / "r.json"), "--fake"])
