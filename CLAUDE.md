@@ -21,3 +21,5 @@ Detects when code changes make markdown docs inaccurate, points at the stale sec
 - `FakeDriftChecker` tests are plumbing tests, not accuracy tests. Accuracy is measured by the reference-check tests and the live tests.
 - Reference check limits: bare `/x` paths count as routes, only names containing `_` are checked, config keys and file paths are not.
 - Provider models: `LLM_MODEL` env overrides the per-provider default.
+- LLM stale flags must carry `doc_claim` (verbatim doc quote, matched after normalizing case/backticks/whitespace) and `code_fact`; otherwise the flag is discarded and counted as `filtered`. The filter checks that the quote exists, not that it contradicts the code.
+- `eval/results.md` is the running log of eval runs (stage by stage); `eval/baseline.md` is the earlier pre-tuning baseline.

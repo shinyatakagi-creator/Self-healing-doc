@@ -43,6 +43,8 @@ def main() -> None:
 
     passes = Counter()
     errors = Counter()
+    filtered = Counter()  # scenario -> discarded flags
+    filtered_true = 0  # discarded flags on docs that really were stale
     wrong = defaultdict(Counter)  # scenario -> "FP doc" / "FN doc" -> runs
     reasons: dict[str, str] = {}
     expected_n = {}
@@ -58,6 +60,9 @@ def main() -> None:
                 expected_n[sc.name] = len(expected)
                 passes[sc.name] += got == expected
                 errors[sc.name] += sum(1 for r in results if r.error)
+                dropped = {r.doc_id for r in results if r.filtered}
+                filtered[sc.name] += len(dropped)
+                filtered_true += len(dropped & expected)
                 for d in got - expected:
                     wrong[sc.name][f"FP {d}"] += 1
                     reasons.setdefault(f"{sc.name} FP {d}", next(r.reason for r in results if r.doc_id == d and r.is_stale))
@@ -78,18 +83,20 @@ def main() -> None:
         f"{date.today()} | provider `{provider}` model `{os.getenv('LLM_MODEL') or DEFAULT_MODELS[provider]}` | "
         f"embedder `text-embedding-3-small` | runs {args.runs} | LLM calls used {complete.calls}/{args.max_calls}",
         "",
-        "| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors |",
-        "|---|---|---|---|---|",
+        "| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered |",
+        "|---|---|---|---|---|---|",
     ]
     for sc in scenarios:
         n = sc.name
         w = "; ".join(f"{k} ({v}/{args.runs})" for k, v in wrong[n].items()) or "-"
-        lines.append(f"| {n} | {expected_n[n]} | {passes[n]}/{args.runs} | {w} | {errors[n]} |")
+        lines.append(f"| {n} | {expected_n[n]} | {passes[n]}/{args.runs} | {w} | {errors[n]} | {filtered[n]} |")
     lines += ["", "| Check | Precision | Recall |", "|---|---|---|"]
     notes = {"overall": "overall", "reference": "reference check", "llm": "LLM check (recall over stale docs the reference check missed)"}
     for k, label in notes.items():
         p, r = prf(tot[k]["tp"], tot[k]["fp"], tot[k]["fn"])
         lines.append(f"| {label} | {p} | {r} |")
+    lines += ["", f"Filtered flags (LLM said stale, claim check discarded it): {sum(filtered.values())} total, "
+              f"{filtered_true} of them on docs that really were stale."]
     if reasons:
         lines += ["", "False positive reasons (first seen):", ""]
         lines += [f"- `{k}`: {v}" for k, v in reasons.items()]

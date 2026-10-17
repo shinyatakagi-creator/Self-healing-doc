@@ -21,8 +21,9 @@ or removed behavior. Do NOT flag wording, style, ordering or level of detail. If
 describes the same behavior in different words, it is not stale. Omitting minor detail is not a mismatch.
 
 Respond with JSON only:
-{{"is_stale": true|false, "reason": "...", "suggested_fix": "...", "confidence": "high"|"medium"|"low"}}
-Use empty strings for reason and suggested_fix when is_stale is false."""
+{{"is_stale": true|false, "reason": "...", "suggested_fix": "...", "confidence": "high"|"medium"|"low", "doc_claim": "...", "code_fact": "..."}}
+doc_claim is a verbatim quote from the documentation section that contradicts the code. code_fact is the fact in the code that it contradicts.
+Use empty strings for reason, suggested_fix, doc_claim and code_fact when is_stale is false."""
 
 DEFAULT_MODELS = {"openai": "gpt-4o", "anthropic": "claude-sonnet-5-5", "gemini": "gemini-2.5-flash"}
 
@@ -32,6 +33,8 @@ class Verdict(BaseModel):
     reason: str
     suggested_fix: str
     confidence: Literal["high", "medium", "low"]
+    doc_claim: str = ""
+    code_fact: str = ""
 
 
 class DriftResult(BaseModel):
@@ -42,6 +45,9 @@ class DriftResult(BaseModel):
     reason: str = ""
     suggested_fix: str = ""
     confidence: str = ""
+    doc_claim: str = ""
+    code_fact: str = ""
+    filtered: bool = False  # LLM said stale but the flag failed the claim check and was discarded
     error: str | None = None
 
 
@@ -67,6 +73,15 @@ def budgeted(complete: Callable[[str], str], max_calls: int) -> Callable[[str], 
 
 class DriftChecker(Protocol):
     def check(self, code_chunk: dict, doc_chunk: dict) -> Verdict: ...
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.replace("`", "").lower().split())
+
+
+def claim_is_grounded(v: Verdict, doc_chunk: dict) -> bool:
+    """A stale flag only counts if it quotes the doc and names the code fact it contradicts."""
+    return bool(v.doc_claim.strip() and v.code_fact.strip() and _norm(v.doc_claim) in _norm(doc_chunk["content"]))
 
 
 def parse_verdict(text: str) -> Verdict:
@@ -137,18 +152,23 @@ class FakeDriftChecker:
         refs = doc_chunk["refs"]
         if not (set(refs["paths"]) & code_paths or set(refs["names"]) & (set(params) | {code_chunk["name"]})):
             return Verdict(is_stale=False, reason="", suggested_fix="", confidence="high")
-        problems = []
+        problems, claims, facts = [], [], []
         for path in refs["paths"]:
             if code_paths and path not in code_paths:
                 problems.append(f"doc path {path} not in code routes {sorted(code_paths)}")
+                claims.append(path)
+                facts.append(f"routes are {sorted(code_paths)}")
         for name, default in re.findall(r"`(\w+)` \([^)]*default (\w+)\)", text):
             if name in params and params[name] is not None and params[name].lower() != default.lower():
                 problems.append(f"default of {name} is {params[name]}, doc says {default}")
+                claims.append(f"default {default}")
+                facts.append(f"{name} defaults to {params[name]}")
         for name in params:
             if name not in text:
                 problems.append(f"param {name} is not documented")
         if problems:
-            return Verdict(is_stale=True, reason="; ".join(problems), suggested_fix="update the section to match the code", confidence="high")
+            return Verdict(is_stale=True, reason="; ".join(problems), suggested_fix="update the section to match the code",
+                           confidence="high", doc_claim=claims[0] if claims else "", code_fact="; ".join(facts))
         return Verdict(is_stale=False, reason="", suggested_fix="", confidence="high")
 
 
@@ -192,7 +212,10 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
                 continue
             try:
                 v = checker.check(code, docs[doc_id])
-                results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm", **v.model_dump()))
+                filtered = v.is_stale and not claim_is_grounded(v, docs[doc_id])
+                results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm",
+                                           **{**v.model_dump(), "is_stale": v.is_stale and not filtered},
+                                           filtered=filtered))
             except DriftError as e:
                 results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm", is_stale=False, error=str(e)))
     return results

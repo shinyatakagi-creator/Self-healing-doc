@@ -145,3 +145,56 @@ def test_plumbing_budget_aborts_run_instead_of_recording_an_error(tmp_path):
     checker = LLMDriftChecker(budgeted(stub(GOOD), 0))
     with pytest.raises(CallBudgetExceeded):
         check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), checker)
+
+
+# --- claim filter (plumbing) ---
+
+def claim_verdict(**kw):
+    base = dict(is_stale=True, reason="r", suggested_fix="f", confidence="high",
+                doc_claim="default 10", code_fact="limit defaults to 20")
+    return Verdict(**{**base, **kw})
+
+
+class Canned:
+    def __init__(self, verdict):
+        self.verdict = verdict
+
+    def check(self, code_chunk, doc_chunk):
+        return self.verdict
+
+
+def run_filter(tmp_path, verdict):
+    code, docs, _ = load("03_changed_default")
+    (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), Canned(verdict))
+    return r
+
+
+def test_filter_accepts_grounded_claim(tmp_path):
+    r = run_filter(tmp_path, claim_verdict())
+    assert r.is_stale and not r.filtered and r.doc_claim == "default 10"
+
+
+def test_filter_normalizes_case_backticks_whitespace(tmp_path):
+    r = run_filter(tmp_path, claim_verdict(doc_claim="`LIMIT`  (optional,\n DEFAULT 10)"))
+    assert r.is_stale
+
+
+@pytest.mark.parametrize("kw", [
+    {"doc_claim": "default 99"},  # not in the doc
+    {"doc_claim": ""},
+    {"code_fact": "  "},
+])
+def test_filter_discards_ungrounded_claim(tmp_path, kw):
+    r = run_filter(tmp_path, claim_verdict(**kw))
+    assert not r.is_stale and r.filtered and r.reason == "r"
+
+
+def test_filter_leaves_non_stale_alone(tmp_path):
+    r = run_filter(tmp_path, claim_verdict(is_stale=False, doc_claim="", code_fact=""))
+    assert not r.is_stale and not r.filtered
+
+
+def test_fake_checker_claims_pass_the_filter(tmp_path):
+    code, docs, _ = load("03_changed_default")
+    (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), FakeDriftChecker())
+    assert r.is_stale and r.doc_claim == "default 10"
