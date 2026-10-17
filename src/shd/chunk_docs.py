@@ -5,14 +5,19 @@ HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 BACKTICK = re.compile(r"`([^`\n]+)`")
 ROUTE = re.compile(r"(?:GET|POST|PUT|DELETE|PATCH)\s+(/\S*)")
 SKIPPED_FENCE = re.compile(r"^```(?:bash|sh|shell|console|yaml|ini|toml|json)\b.*?^```", re.M | re.S)
+PLAIN_CALL = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\(")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\(.*\))?")
 
 
 def extract_refs(text: str) -> dict:
-    """Pull code-looking references out of backtick spans. Shell/config fenced blocks are ignored.
+    """Pull code-looking references out of backtick spans, plus snake_case call syntax in plain text
+    (`do_thing(`). Other plain prose is never a reference. Shell/config fenced blocks are ignored.
     `routes` are the paths written with an HTTP method in front; `calls` are names written as `name(...)`."""
     text = SKIPPED_FENCE.sub("", text)
     paths, routes, names, calls, config_keys = set(), set(), set(), set(), set()
+    for name in PLAIN_CALL.findall(text):
+        names.add(name)
+        calls.add(name)
     for span in BACKTICK.findall(text):
         span = span.strip()
         if m := ROUTE.search(span):

@@ -368,3 +368,94 @@ False positive reasons (first seen):
 | pairs per doc | Conventions 5, Assumptions 5, self-healing-docs (CLAUDE) 5, README 3, Run 2 |
 
 Per the stopping rule, no further tuning rounds after Stage 6. Known remaining issue: fixture 09 `Cancelling orders` is a stale-tier false positive in 2 of 5 runs ("empty by default" vs `reason: str = ""`; the model treats an equivalent value as a conflict and the verifier agrees).
+
+## Naming terms baseline (3 runs): + held-out fixture 13, before the fix
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 3 | LLM calls used 96/300 | verifier on
+
+Pass = every expected doc flagged in either tier AND no stale-tier false positive.
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 3/3 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 3/3 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 3/3 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 3/3 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 3/3 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 3/3 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 3/3 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 3/3 | - | 0 | 0 | 0 |
+| 09_orders_corpus | 1 | 1/3 | FP[stale] docs/api.md::Cancelling orders (2/3) | 0 | 0 | 1 |
+| 10_prose_claim | 1 | 3/3 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 3/3 | - | 0 | 0 | 0 |
+| 12_non_function_symbols | 1 | 3/3 | - | 0 | 0 | 0 |
+| 13_naming_terms | 1 | 0/3 | FP[stale] docs/api.md::Naming conventions (3/3); FP[stale] docs/api.md::Limitations (3/3) | 0 | 0 | 0 |
+
+| Tier / check | Precision | Recall | Note |
+|---|---|---|---|
+| **Stale tier** (reference + LLM flags naming a code element) | 0.75 (24/32) | 0.89 (24/27) |  |
+| Review tier (LLM prose-only flags) | 1.00 (3/3) | 0.11 (3/27) | 3 flags over 3 runs; recall here = stale docs that landed only in this tier |
+| Either tier | 0.77 (27/35) | 1.00 (27/27) | recall counts a detection in either tier |
+| Reference check (stale tier) | 0.71 (15/21) | 0.56 (15/27) |  |
+| LLM check, stale tier | 0.82 (9/11) | 0.75 (9/12) | recall over expected docs the reference check missed |
+
+Filtered flags (claim not grounded): 0 total, 0 on docs that really were stale.
+Verifier rejected flags: 1 total, 0 on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `09_orders_corpus FP[stale] docs/api.md::Cancelling orders`: The documentation states that the 'reason' parameter is optional and empty by default, but the code specifies a default value of an empty string. | claim: 'Params: `reason` (optional, free text, empty by default)'
+- `13_naming_terms FP[stale] docs/api.md::Naming conventions`: doc references no longer in code: name camel_case, name kebab_case, name snake_case | claim: ''
+- `13_naming_terms FP[stale] docs/api.md::Limitations`: doc references no longer in code: name camel_case, name kebab_case, name snake_case | claim: ''
+
+## Naming terms fix (5 runs): 13 fixtures
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 5 | LLM calls used 172/400 | verifier on
+
+Pass = every expected doc flagged in either tier AND no stale-tier false positive.
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 5/5 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 5/5 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 5/5 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 5/5 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 5/5 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 5/5 | - | 0 | 0 | 1 |
+| 09_orders_corpus | 1 | 4/5 | FP[stale] docs/api.md::Cancelling orders (1/5) | 0 | 0 | 5 |
+| 10_prose_claim | 1 | 5/5 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 5/5 | - | 0 | 0 | 0 |
+| 12_non_function_symbols | 1 | 5/5 | - | 0 | 0 | 0 |
+| 13_naming_terms | 1 | 5/5 | - | 0 | 0 | 0 |
+
+| Tier / check | Precision | Recall | Note |
+|---|---|---|---|
+| **Stale tier** (reference + LLM flags naming a code element) | 0.98 (40/41) | 0.89 (40/45) |  |
+| Review tier (LLM prose-only flags) | 1.00 (5/5) | 0.11 (5/45) | 5 flags over 5 runs; recall here = stale docs that landed only in this tier |
+| Either tier | 0.98 (45/46) | 1.00 (45/45) | recall counts a detection in either tier |
+| Reference check (stale tier) | 1.00 (25/25) | 0.56 (25/45) |  |
+| LLM check, stale tier | 0.94 (15/16) | 0.75 (15/20) | recall over expected docs the reference check missed |
+
+Filtered flags (claim not grounded): 0 total, 0 on docs that really were stale.
+Verifier rejected flags: 6 total, 0 on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `09_orders_corpus FP[stale] docs/api.md::Cancelling orders`: The documentation states that the 'reason' parameter is optional and empty by default, but the code specifies a default value of an empty string. | claim: 'Params: `reason` (optional, free text, empty by default)'
+
+## Naming terms fix dogfood: README.md + CLAUDE.md vs src/shd (1 run)
+
+25 LLM pairs, verifier on, 8 doc sections (all got the reference check, all 8 reached the LLM).
+
+| Metric | Value |
+|---|---|
+| stale-tier flags | 0 |
+| review-tier flags | 0 |
+| errors | 0 |
+| filtered | 2 |
+| verifier rejected | 2 |
+| `README.md::Known limitations` (the section that tripped on `snake_case`) | OK |
+
+Before the fix, the PR check flagged `snake_case` in `README.md::Known limitations`. An earlier dogfood run on a branch that also carried the `test: deliberate doc drift` commit (README mentioned a nonexistent `run_drift_scan()`) correctly flagged it as stale via the reference check (`name run_drift_scan`), and that commit is not part of this branch.

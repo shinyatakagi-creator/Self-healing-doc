@@ -29,6 +29,7 @@ CODE_TRUTH = {
     ],
     "11_stray_symbols": ("src/api.py::list_reports", ("GET", "/v1/reports"), {"owner": None, "page_size": "25"}),
     "12_non_function_symbols": ("src/api.py::process_batch", ("POST", "/v1/batches"), {"items": None}),
+    "13_naming_terms": ("src/api.py::run_search", ("POST", "/v1/search"), {"query": None, "limit": "10"}),
     "10_prose_claim": ("src/api.py::search_notes", ("GET", "/v1/notes/search"), {"text": None, "limit": "20"}),
 }
 
@@ -159,3 +160,8 @@ def test_module_context_is_capped(tmp_path):
     p = write(tmp_path, "m.py", "".join(f"def func_{i}(a, b, c): ...\n" for i in range(300)) + "VALUE = 7\n")
     ctx = chunk_code(p, tmp_path)[0]["context"]
     assert len(ctx) <= CONTEXT_CAP and "VALUE = 7" in ctx  # assignments are kept first
+
+
+def test_doc_refs_plain_call_syntax_only():
+    refs = extract_refs("Run purge_cache() now. Plain old_name and Foo_bar() or other(x) stay out.")
+    assert refs["names"] == ["purge_cache"] and refs["calls"] == ["purge_cache"]
