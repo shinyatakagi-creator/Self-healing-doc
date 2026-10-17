@@ -1,0 +1,9 @@
+{
+ "stale": [
+  "docs/api.md::Cleanup"
+ ],
+ "not_stale": [
+  "docs/api.md::Naming conventions",
+  "docs/api.md::Limitations"
+ ]
+}

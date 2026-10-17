@@ -29,6 +29,7 @@ CODE_TRUTH = {
     ],
     "11_stray_symbols": ("src/api.py::list_reports", ("GET", "/v1/reports"), {"owner": None, "page_size": "25"}),
     "12_non_function_symbols": ("src/api.py::process_batch", ("POST", "/v1/batches"), {"items": None}),
+    "13_naming_terms": ("src/api.py::run_search", ("POST", "/v1/search"), {"query": None, "limit": "10"}),
     "10_prose_claim": ("src/api.py::search_notes", ("GET", "/v1/notes/search"), {"text": None, "limit": "20"}),
 }
 

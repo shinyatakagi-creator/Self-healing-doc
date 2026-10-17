@@ -23,10 +23,14 @@ def load(name):
 
 # --- accuracy: the deterministic docs->code reference check (no LLM) ---
 
-REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function", "12_non_function_symbols"}
+REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function", "12_non_function_symbols", "13_naming_terms"}
 
 
-@pytest.mark.parametrize("name", SCENARIOS)
+@pytest.mark.parametrize("name", [
+    pytest.param(n, marks=pytest.mark.xfail(strict=True, reason="naming-convention terms flagged, see eval/results.md"))
+    if n == "13_naming_terms" else n
+    for n in SCENARIOS
+])
 def test_reference_check_per_fixture(name):
     code, docs, expected = load(name)
     ids = code_identifiers_dir(FIXTURES / name / "src")
