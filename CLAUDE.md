@@ -29,3 +29,15 @@ Detects when code changes make markdown docs inaccurate, points at the stale sec
 - Verifier rule: "code lacks / does not mention X" is not a contradiction unless the doc names a code element; value conflicts still count. An empty `confidence` on a non-stale answer is read as "low".
 - Changed-only (`--base`): old chunks come from the merge-base, new from the working tree. LLM pairs start only from new/modified chunks (by `source`); removed/renamed chunk IDs and vanished names/routes/params trigger the reference check on docs that still mention them. Misses: renames of non-snake_case names, since the reference check only checks names with an underscore.
 - The PR comment is flags only (never commits). Workflow: offline `pytest`, Python 3.12, `--max-calls 30`, fork PRs skip the check and comment steps.
+
+## Review guidelines
+
+The AI reviewer (`.github/workflows/ai-review.yml`) reads this section. It comments only: never approve, request changes, merge or push. Edit this section to tune it.
+
+- LLM JSON output must be validated (pydantic) and failures handled: retry once, then record an error result. Flag any path that trusts raw model output or lets a malformed reply crash the run.
+- Offline tests must make no real API calls. Real calls belong only in tests marked `@pytest.mark.live`.
+- Chunk IDs stay stable: code `path::function`, docs `path::heading`. Flag changes to how IDs are built, since they appear in every report.
+- New behavior needs a fixture or a test. Flag logic changes that come without one, and detection changes that come without an eval result.
+- No secrets or `.env` contents in commits, fixtures, docs, logs or test output. Flag hardcoded keys.
+- Precision matters more than recall. Flag changes to the drift prompt, the verifier prompt, the claim filter, the tiers or the reference-check rules that could make the checker noisier, and ask for fixtures that would show it.
+- Workflow changes: keep least-privilege `permissions`, pass `${{ }}` values through `env:` instead of into `run:` scripts, keep fork/bot guards and timeouts.

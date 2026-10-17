@@ -23,19 +23,20 @@ Removed or renamed chunks (and any name, route or param that disappeared from th
 on the doc sections that still mention them; changed doc files get the reference check too.
 `--max-calls` stops the run and reports what was checked. The comment has a hidden marker, so reruns update it.
 
-## Testing the workflow
+## Testing the workflows
 
-Do this on a scratch repo, not this one.
+Two workflows run on every PR: `self-healing-docs.yml` (the drift check, comment titled "Docs drift check") and
+`ai-review.yml` (the AI reviewer, comment titled "AI review (Claude)"). Each posts its own comment. Do this on a scratch repo, not this one.
 
 1. Push a copy of this project to a scratch GitHub repo with `main` as the default branch.
-2. Add the repo secret `OPENAI_API_KEY` (Settings > Secrets and variables > Actions). `GITHUB_TOKEN` is automatic.
-3. Open a PR from a branch that changes a default, like fixture 03: in `src/shd/chunk_code.py` change `CONTEXT_CAP = 2000` to a different value, or edit a documented default in `src/shd/`.
-4. Expected: the `pytest` step passes, then a PR comment with a "Stale" and/or "Worth a look" section appears.
-5. Push another commit to the same PR: the same comment is edited, not duplicated.
-6. Delete a function that README.md or CLAUDE.md mentions by name: it shows up under "Stale" through the reference check.
-7. PRs from forks run only the offline tests: forks do not get repo secrets, so the check and comment steps are skipped.
+2. Add the repo secrets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` (Settings > Secrets and variables > Actions). `GITHUB_TOKEN` is automatic.
+3. Install the Claude GitHub app on the scratch repo (https://github.com/apps/claude, or run `/install-github-app` in Claude Code and decline the workflow file it offers). The reviewer needs it.
+4. **Drift PR:** open a PR that changes a default, like fixture 03 (for example edit a documented default in `src/shd/`). Expected: `pytest` passes, then a "Docs drift check" comment with a "Stale" and/or "Worth a look" section. Push another commit: the same comment is edited, not duplicated. Delete a function that README.md or CLAUDE.md mentions by name: it appears under "Stale".
+5. **Sloppy PR:** open a PR with a deliberately sloppy change, such as an unvalidated LLM response (use `json.loads(text)` straight into a result) or a new behavior with no test. Expected: an "AI review (Claude)" comment pointing at it, with the guidelines from CLAUDE.md. The reviewer must not approve, request changes or push.
+6. Drafts are skipped by the reviewer. PRs from forks (and dependabot) run only the offline tests: they do not get repo secrets, so the check, the comment and the review are skipped.
+7. The reviewer checks out with `persist-credentials: false`, so the checked-out repo holds no token. Watch the first run to confirm the action still works that way.
 
-Run locally first: `python -m shd.cli check --base main --code src/shd --docs README.md --docs CLAUDE.md --comment-file /tmp/c.md`
+Run the drift check locally first: `python -m shd.cli check --base main --code src/shd --docs README.md --docs CLAUDE.md --comment-file /tmp/c.md`
 
 ## Known limitations
 

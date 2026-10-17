@@ -1,0 +1,55 @@
+name: ai-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# a new push cancels the in-flight review for the same PR
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# id-token: write is how the action gets its short-lived GitHub App token (per the action's docs)
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    # skip drafts; forks and dependabot do not get repo secrets
+    if: >
+      github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # pinned to the commit of v1.0.252
+      - uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true
+          prompt: |
+            Review pull request ${{ github.event.pull_request.number }} in the repository ${{ github.repository }}.
+            The PR branch is already checked out in the working directory.
+
+            First read the "## Review guidelines" section of CLAUDE.md and follow it. Review the PR the way a
+            human teammate would: bugs, missing tests, risky changes.
+
+            Rules:
+            - Comment only. Never approve, request changes, merge, or push commits.
+            - Start your summary comment with the heading "## AI review (Claude)". A separate workflow posts a
+              "Docs drift check" comment; do not edit, repeat or reply to it.
+            - Use `gh pr comment` for the summary and `mcp__github_inline_comment__create_inline_comment`
+              (with `confirmed: true`) for specific lines.
+            - Only post GitHub comments.
+          claude_args: |
+            --max-turns 15
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git:*),Bash(gh pr review:*),Bash(gh pr merge:*)"
