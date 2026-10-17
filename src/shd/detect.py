@@ -66,7 +66,9 @@ class DriftError(Exception):
 
 
 class CallBudgetExceeded(Exception):
-    pass
+    """`partial` and `unchecked` are filled in by check_drift: results so far, and pairs not yet checked."""
+    partial: list = []
+    unchecked: int = 0
 
 
 class CallBudget:
@@ -290,24 +292,30 @@ def check_references(doc_chunk: dict, code_chunks: list[dict], identifiers: set[
 
 
 def candidate_pairs(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex, k: int = 3,
-                    k_rev: int | None = 5, skip: set[str] = frozenset()) -> list[tuple[dict, dict]]:
+                    k_rev: int | None = 5, skip: set[str] = frozenset(),
+                    only_code_ids: set[str] | None = None) -> list[tuple[dict, dict]]:
     """(code, doc) pairs for the LLM. Mutual top-k: the doc is in the code chunk's top-k docs AND the
     code chunk is in the doc's top-k_rev code chunks, so one doc section never gets more than k_rev pairs.
-    k_rev=None keeps the old one-sided rule."""
+    k_rev=None keeps the old one-sided rule. only_code_ids limits which code chunks start a pair
+    (all chunks are still indexed, so the reverse ranking is unchanged)."""
     index.index_docs(doc_chunks)
     index.index_code(code_chunks)
     docs = {d["id"]: d for d in doc_chunks}
     reverse = {} if k_rev is None else {d["id"]: set(index.find_related_code(d, k_rev)) for d in doc_chunks}
-    return [(code, docs[doc_id]) for code in code_chunks for doc_id in index.find_related_docs(code, k)
+    return [(code, docs[doc_id]) for code in code_chunks if only_code_ids is None or code["id"] in only_code_ids
+            for doc_id in index.find_related_docs(code, k)
             if doc_id not in skip and (k_rev is None or code["id"] in reverse[doc_id])]
 
 
 def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex,
                 checker: DriftChecker, k: int = 3, verifier: Verifier | None = None,
-                identifiers: set[str] | None = None, k_rev: int | None = 5) -> list[DriftResult]:
+                identifiers: set[str] | None = None, k_rev: int | None = 5, only_code_ids: set[str] | None = None,
+                reference_doc_ids: set[str] | None = None) -> list[DriftResult]:
     results: list[DriftResult] = []
     flagged: set[str] = set()
     for doc in doc_chunks:
+        if reference_doc_ids is not None and doc["id"] not in reference_doc_ids:
+            continue
         if missing := check_references(doc, code_chunks, identifiers):
             flagged.add(doc["id"])
             results.append(DriftResult(
@@ -317,7 +325,8 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
             ))
 
     # docs already flagged by the reference check skip the LLM call
-    for code, doc in candidate_pairs(code_chunks, doc_chunks, index, k, k_rev, skip=flagged):
+    pairs = candidate_pairs(code_chunks, doc_chunks, index, k, k_rev, skip=flagged, only_code_ids=only_code_ids)
+    for done, (code, doc) in enumerate(pairs):
         try:
             v = checker.check(code, doc)
             filtered = v.is_stale and not claim_is_grounded(v, doc)
@@ -330,6 +339,9 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
                                        filtered=filtered, verifier_rejected=rejected))
         except DriftError as e:
             results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm", is_stale=False, error=str(e)))
+        except CallBudgetExceeded as e:
+            e.partial, e.unchecked = results, len(pairs) - done
+            raise
     return results
 
 

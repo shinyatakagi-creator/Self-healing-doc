@@ -87,7 +87,11 @@ def chunk_code(filepath: str | Path, root: str | Path | None = None) -> list[dic
     nested functions and methods use dotted names (`outer.inner`)."""
     path = Path(filepath)
     rel = path.relative_to(root).as_posix() if root else path.as_posix()
-    tree = ast.parse(path.read_text())
+    return chunk_code_text(path.read_text(), rel)
+
+
+def chunk_code_text(text: str, rel: str) -> list[dict]:
+    tree = ast.parse(text)
     chunks: list[dict] = []
 
     def visit(node: ast.AST, prefix: str) -> None:
