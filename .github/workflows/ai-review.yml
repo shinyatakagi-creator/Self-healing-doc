@@ -49,8 +49,9 @@ jobs:
             - Post the summary with `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "..."`
               so a new push edits your existing "## AI review (Claude)" comment instead of adding another.
               Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for specific lines.
+            - Post your summary comment by about turn 20 at the latest, even if the review is incomplete, and say what you didn't get to.
             - Only post GitHub comments.
           claude_args: |
-            --max-turns 15
+            --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
             --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git:*),Bash(gh pr review:*),Bash(gh pr merge:*)"
