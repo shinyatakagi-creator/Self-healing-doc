@@ -46,8 +46,9 @@ jobs:
             - Comment only. Never approve, request changes, merge, or push commits.
             - Start your summary comment with the heading "## AI review (Claude)". A separate workflow posts a
               "Docs drift check" comment; do not edit, repeat or reply to it.
-            - Use `gh pr comment` for the summary and `mcp__github_inline_comment__create_inline_comment`
-              (with `confirmed: true`) for specific lines.
+            - Post the summary with `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "..."`
+              so a new push edits your existing "## AI review (Claude)" comment instead of adding another.
+              Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for specific lines.
             - Only post GitHub comments.
           claude_args: |
             --max-turns 15

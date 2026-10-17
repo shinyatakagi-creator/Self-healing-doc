@@ -69,3 +69,12 @@ def test_ai_reviewer_prompt_uses_expressions_not_env():
     prompt = step["with"]["prompt"]
     assert "${{ github.event.pull_request.number }}" in prompt and "${{ github.repository }}" in prompt
     assert "$PR_NUMBER" not in prompt and "$REPO" not in prompt
+
+
+def test_ai_reviewer_summary_edits_the_existing_comment():
+    wf = load(next(p for p in WORKFLOWS if p.name == "ai-review.yml"))
+    step = next(s for s in wf["jobs"]["review"]["steps"] if "claude-code-action" in s.get("uses", ""))
+    prompt = step["with"]["prompt"]
+    assert "gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none" in prompt
+    # the tool allowlist already covers any flags on `gh pr comment`
+    assert "Bash(gh pr comment:*)" in step["with"]["claude_args"]
