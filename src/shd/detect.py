@@ -49,6 +49,22 @@ class DriftError(Exception):
     pass
 
 
+class CallBudgetExceeded(Exception):
+    pass
+
+
+def budgeted(complete: Callable[[str], str], max_calls: int) -> Callable[[str], str]:
+    """Counts LLM calls (retries included) and aborts the run past the cap. Embedding calls are not counted."""
+    def wrapper(prompt: str) -> str:
+        if wrapper.calls >= max_calls:
+            raise CallBudgetExceeded(f"hit --max-calls={max_calls}")
+        wrapper.calls += 1
+        return complete(prompt)
+
+    wrapper.calls = 0
+    return wrapper
+
+
 class DriftChecker(Protocol):
     def check(self, code_chunk: dict, doc_chunk: dict) -> Verdict: ...
 
@@ -71,6 +87,8 @@ class LLMDriftChecker:
         for attempt in range(2):  # retry once on malformed output
             try:
                 text = self.complete(prompt if attempt == 0 else prompt + "\n\nYour last reply was not valid JSON in the required shape. Reply with the JSON object only.")
+            except CallBudgetExceeded:
+                raise
             except Exception as e:  # API/network failure must not crash the run
                 raise DriftError(f"LLM call failed: {e}") from e
             try:

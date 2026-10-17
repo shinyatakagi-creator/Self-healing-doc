@@ -10,4 +10,4 @@ pytest                 # offline
 pytest -m live         # real API calls
 ```
 
-Status: Phase 3 (drift detection). See CLAUDE.md for conventions.
+Status: Phase 4 (CLI + eval). `python -m shd.cli check --fixture fixtures/03_changed_default`; `python eval/run_eval.py --runs 3 --max-calls 60`. Baseline in eval/baseline.md.

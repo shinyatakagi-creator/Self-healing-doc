@@ -129,3 +129,12 @@ def test_live_fixture(name, tmp_path, live_embedder):
     results = check_drift(code, docs, DocIndex(tmp_path / "c", live_embedder), checker)
     assert not [r for r in results if r.error], [r.error for r in results if r.error]
     assert stale_doc_ids(results) == set(expected["stale"]), [r.model_dump() for r in results if r.is_stale]
+
+
+def test_plumbing_budget_aborts_run_instead_of_recording_an_error(tmp_path):
+    from shd.detect import CallBudgetExceeded, budgeted
+
+    code, docs, _ = load("03_changed_default")
+    checker = LLMDriftChecker(budgeted(stub(GOOD), 0))
+    with pytest.raises(CallBudgetExceeded):
+        check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), checker)
