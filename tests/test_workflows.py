@@ -78,3 +78,10 @@ def test_ai_reviewer_summary_edits_the_existing_comment():
     assert "gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none" in prompt
     # the tool allowlist already covers any flags on `gh pr comment`
     assert "Bash(gh pr comment:*)" in step["with"]["claude_args"]
+
+
+def test_ai_reviewer_turn_budget_leaves_room_for_the_summary():
+    wf = load(next(p for p in WORKFLOWS if p.name == "ai-review.yml"))
+    step = next(s for s in wf["jobs"]["review"]["steps"] if "claude-code-action" in s.get("uses", ""))
+    assert "--max-turns 30" in step["with"]["claude_args"]
+    assert "by about turn 20 at the latest, even if the review is incomplete, and say what you didn't get to" in step["with"]["prompt"]
