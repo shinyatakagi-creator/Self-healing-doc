@@ -212,10 +212,12 @@ class FakeDriftChecker:
         return Verdict(is_stale=False, reason="", suggested_fix="", confidence="high")
 
 
-def code_symbols(code_chunks: list[dict]) -> tuple[set[str], set[str]]:
+def code_symbols(code_chunks: list[dict], identifiers: set[str] | None = None) -> tuple[set[str], set[str]]:
+    """Route paths, and every name the code knows. `identifiers` (from chunk_code.code_identifiers)
+    adds classes, attributes, fields and module variables; without it only functions and params count."""
     paths = {r["path"] for c in code_chunks for r in c["routes"]}
     names = {c["name"].split(".")[-1] for c in code_chunks} | {p["name"] for c in code_chunks for p in c["params"]}
-    return paths, names
+    return paths, names | (identifiers or set())
 
 
 PARAM_LIST = re.compile(r"(?im)^\s*(params?|parameters|arguments|args)\b|`\w+` \((?:required|optional)")
@@ -230,13 +232,13 @@ def _looks_like_file(path: str) -> bool:
     return bool(re.search(r"\.\w{1,5}$", path.rsplit("/", 1)[-1]))
 
 
-def check_references(doc_chunk: dict, code_chunks: list[dict]) -> list[str]:
+def check_references(doc_chunk: dict, code_chunks: list[dict], identifiers: set[str] | None = None) -> list[str]:
     """Doc refs that no longer exist in the code. No LLM involved.
     A path is a route if an HTTP method precedes it, or (bare) it is not a filename and shares a
     non-version segment with a real route. A snake_case name is checked only when the section is
     anchored to code: call syntax, a parameter list, or a reference that does exist in the code.
     Config keys and file paths are not checked."""
-    paths, names = code_symbols(code_chunks)
+    paths, names = code_symbols(code_chunks, identifiers)
     refs = doc_chunk["refs"]
     code_segments = set().union(*(_segments(p) for p in paths)) if paths else set()
     routes = [p for p in refs["paths"] if p.startswith("/") and (
@@ -250,11 +252,12 @@ def check_references(doc_chunk: dict, code_chunks: list[dict]) -> list[str]:
 
 
 def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex,
-                checker: DriftChecker, k: int = 3, verifier: Verifier | None = None) -> list[DriftResult]:
+                checker: DriftChecker, k: int = 3, verifier: Verifier | None = None,
+                identifiers: set[str] | None = None) -> list[DriftResult]:
     results: list[DriftResult] = []
     flagged: set[str] = set()
     for doc in doc_chunks:
-        if missing := check_references(doc, code_chunks):
+        if missing := check_references(doc, code_chunks, identifiers):
             flagged.add(doc["id"])
             results.append(DriftResult(
                 code_id=None, doc_id=doc["id"], detection="reference", is_stale=True,

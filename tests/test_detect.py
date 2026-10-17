@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from shd.chunk_code import chunk_code_dir
+from shd.chunk_code import chunk_code_dir, code_identifiers_dir
 from shd.chunk_docs import chunk_docs_dir
 from shd.detect import (DriftError, FakeDriftChecker, LLMDriftChecker, Verdict, check_drift,
                         check_references, make_complete, parse_verdict, stale_doc_ids)
@@ -26,21 +26,18 @@ def load(name):
 REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function", "12_non_function_symbols"}
 
 
-@pytest.mark.parametrize("name", [
-    pytest.param(n, marks=pytest.mark.xfail(strict=True, reason="symbol index only has functions/params, see eval/results.md"))
-    if n == "12_non_function_symbols" else n
-    for n in SCENARIOS
-])
+@pytest.mark.parametrize("name", SCENARIOS)
 def test_reference_check_per_fixture(name):
     code, docs, expected = load(name)
-    flagged = {d["id"] for d in docs if check_references(d, code)}
+    ids = code_identifiers_dir(FIXTURES / name / "src")
+    flagged = {d["id"] for d in docs if check_references(d, code, ids)}
     assert flagged == (set(expected["stale"]) if name in REFERENCE_STALE else set())
 
 
 def test_reference_check_reasons():
     code, docs, _ = load("04_deleted_function")
     (delete,) = [d for d in docs if d["title"] == "Delete item"]
-    assert check_references(delete, code) == ["route /v1/items/{item_id}", "name delete_item"]
+    assert check_references(delete, code, code_identifiers_dir(FIXTURES / "04_deleted_function" / "src")) == ["route /v1/items/{item_id}", "name delete_item"]
 
 
 def test_reference_results_are_their_own_detection_type(tmp_path):
@@ -295,3 +292,11 @@ def test_verifier_error_is_recorded_not_raised(tmp_path):
 
     (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), Canned(claim_verdict()), verifier=Down())
     assert r.error and not r.is_stale
+
+
+def test_ref_non_function_symbols_exist_in_identifier_index():
+    code, _, _ = load("12_non_function_symbols")
+    ids = code_identifiers_dir(FIXTURES / "12_non_function_symbols" / "src")
+    doc = fake_doc("`POST /v1/batches` runs `process_batch(items)`; see `max_batch_size`, `retry_limit`, `cache_ttl`, `flush_buffer()`.")
+    assert check_references(doc, code, ids) == ["name flush_buffer"]
+    assert "name max_batch_size" in check_references(doc, code)  # without identifiers: the old behavior

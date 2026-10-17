@@ -4,7 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from shd.chunk_code import chunk_code, chunk_code_dir
+from shd.chunk_code import chunk_code, chunk_code_dir, code_identifiers_dir, code_identifiers
 from shd.chunk_docs import chunk_docs, chunk_docs_dir
 from shd.detect import (DriftChecker, DriftResult, FakeDriftChecker, FakeVerifier, LLMDriftChecker, LLMVerifier,
                         Verifier, check_drift, make_complete)
@@ -14,23 +14,25 @@ from shd.report import print_summary, write_report
 
 
 def run_check(root: Path, embedder: Embedder, checker: DriftChecker, verifier: Verifier | None = None) -> tuple[list[dict], list[DriftResult]]:
-    return run_check_chunks(chunk_code_dir(root / "src"), chunk_docs_dir(root / "docs"), embedder, checker, verifier)
+    return run_check_chunks(chunk_code_dir(root / "src"), chunk_docs_dir(root / "docs"), embedder, checker, verifier,
+                            code_identifiers_dir(root / "src"))
 
 
 def run_check_chunks(code: list[dict], docs: list[dict], embedder: Embedder, checker: DriftChecker,
-                     verifier: Verifier | None = None) -> tuple[list[dict], list[DriftResult]]:
+                     verifier: Verifier | None = None, identifiers: set[str] | None = None) -> tuple[list[dict], list[DriftResult]]:
     with tempfile.TemporaryDirectory() as tmp:
-        return docs, check_drift(code, docs, DocIndex(tmp, embedder), checker, verifier=verifier)
+        return docs, check_drift(code, docs, DocIndex(tmp, embedder), checker, verifier=verifier, identifiers=identifiers)
 
 
-def chunks_from_paths(code_paths: list[Path], docs_paths: list[Path], root: Path) -> tuple[list[dict], list[dict]]:
+def chunks_from_paths(code_paths: list[Path], docs_paths: list[Path], root: Path) -> tuple[list[dict], list[dict], set[str]]:
     """Files or directories; chunk IDs are relative to `root`."""
     def files(paths, pattern):
         return [f for p in paths for f in (sorted(p.rglob(pattern)) if p.is_dir() else [p])]
 
     code = [c for f in files(code_paths, "*.py") for c in chunk_code(f.resolve(), root)]
     docs = [c for f in files(docs_paths, "*.md") for c in chunk_docs(f.resolve(), root)]
-    return code, docs
+    identifiers = set().union(*(code_identifiers(f) for f in files(code_paths, "*.py")))
+    return code, docs, identifiers
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -53,8 +55,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.fixture:
         docs, results = run_check(args.fixture, embedder, checker, verifier)
     else:
-        code, docs = chunks_from_paths(args.code, args.docs, Path.cwd())
-        docs, results = run_check_chunks(code, docs, embedder, checker, verifier)
+        code, docs, identifiers = chunks_from_paths(args.code, args.docs, Path.cwd())
+        docs, results = run_check_chunks(code, docs, embedder, checker, verifier, identifiers)
     print_summary(docs, results)
     write_report(results, args.out)
     print(f"\nwrote {args.out}")

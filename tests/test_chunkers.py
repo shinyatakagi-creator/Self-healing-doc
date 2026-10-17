@@ -114,3 +114,22 @@ def test_docs_no_headings(tmp_path):
 def test_docs_skips_empty_and_ignores_fenced_hashes(tmp_path):
     p = write(tmp_path, "d.md", "# Top\n\n## A\n\n```bash\n# not a heading\n```\n\n## B\n\n## C\n\ntext\n")
     assert [c["id"] for c in chunk_docs(p, tmp_path)] == ["d.md::A", "d.md::C"]
+
+
+def test_code_identifiers_cover_non_function_symbols(tmp_path):
+    from shd.chunk_code import code_identifiers
+
+    p = write(tmp_path, "m.py", (
+        "import os.path as osp\nfrom x import thing\n\n"
+        "limit_total = 5\nclass Box:\n    size: int = 1\n    label = 'a'\n\n"
+        "    def __init__(self, width):\n        self.width = width\n\n"
+        "def f(a, *rest, flag=False, **kw):\n    return g(retries=3)\n"
+    ))
+    assert {"limit_total", "Box", "size", "label", "width", "f", "a", "rest", "flag", "kw", "retries", "osp", "thing"} <= code_identifiers(p)
+
+
+def test_code_identifiers_do_not_include_plain_loads(tmp_path):
+    from shd.chunk_code import code_identifiers
+
+    p = write(tmp_path, "m.py", "def f():\n    return undefined_name + other.attr\n")
+    assert {"undefined_name", "attr", "other"}.isdisjoint(code_identifiers(p))

@@ -74,3 +74,27 @@ def chunk_code(filepath: str | Path, root: str | Path | None = None) -> list[dic
 def chunk_code_dir(root: str | Path) -> list[dict]:
     root = Path(root)
     return [c for f in sorted(root.rglob("*.py")) for c in chunk_code(f, root.parent)]
+
+
+def code_identifiers(filepath: str | Path) -> set[str]:
+    """Every name the code defines or uses as a keyword: functions, classes, params, assigned names
+    (module variables, class attributes, dataclass fields), `self.x` attributes, keyword-argument names, imports."""
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(Path(filepath).read_text())):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.arg):
+            names.add(node.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store):
+            names.add(node.attr)
+        elif isinstance(node, ast.keyword) and node.arg:
+            names.add(node.arg)
+        elif isinstance(node, ast.alias):
+            names.add((node.asname or node.name).split(".")[-1])
+    return names
+
+
+def code_identifiers_dir(root: str | Path) -> set[str]:
+    return set().union(*(code_identifiers(f) for f in Path(root).rglob("*.py")))
