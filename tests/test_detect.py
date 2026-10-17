@@ -300,3 +300,33 @@ def test_ref_non_function_symbols_exist_in_identifier_index():
     doc = fake_doc("`POST /v1/batches` runs `process_batch(items)`; see `max_batch_size`, `retry_limit`, `cache_ttl`, `flush_buffer()`.")
     assert check_references(doc, code, ids) == ["name flush_buffer"]
     assert "name max_batch_size" in check_references(doc, code)  # without identifiers: the old behavior
+
+
+# --- pairing: mutual top-k ---
+
+from shd.detect import candidate_pairs
+
+
+def synthetic_code(n):
+    return [{"id": f"m.py::f{i}", "name": f"f{i}", "routes": [], "params": [], "docstring": f"handles topic{i} items",
+             "source": f"def f{i}(): ..."} for i in range(n)]
+
+
+def test_pairing_caps_pairs_per_doc_section(tmp_path):
+    code = synthetic_code(8)
+    doc = {"id": "d.md::Topics", "content": "handles items for topics", "refs": {}}
+    index = DocIndex(tmp_path / "c", FakeEmbedder())
+    assert len(candidate_pairs(code, [doc], index, k=3, k_rev=None)) == 8  # old rule: every chunk picks the one doc
+    assert len(candidate_pairs(code, [doc], DocIndex(tmp_path / "d", FakeEmbedder()), k=3, k_rev=5)) == 5
+
+
+def test_pairing_keeps_fixture_10_pair(tmp_path):
+    code, docs, _ = load("10_prose_claim")
+    pairs = candidate_pairs(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()))
+    assert ("src/api.py::search_notes", "docs/notes.md::Searching notes") in {(c["id"], d["id"]) for c, d in pairs}
+
+
+def test_pairing_skips_reference_flagged_docs(tmp_path):
+    code, docs, _ = load("04_deleted_function")
+    pairs = candidate_pairs(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), skip={"docs/api.md::Delete item"})
+    assert {d["id"] for _, d in pairs} == {"docs/api.md::Health check"}

@@ -251,9 +251,22 @@ def check_references(doc_chunk: dict, code_chunks: list[dict], identifiers: set[
     return missing
 
 
+def candidate_pairs(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex, k: int = 3,
+                    k_rev: int | None = 5, skip: set[str] = frozenset()) -> list[tuple[dict, dict]]:
+    """(code, doc) pairs for the LLM. Mutual top-k: the doc is in the code chunk's top-k docs AND the
+    code chunk is in the doc's top-k_rev code chunks, so one doc section never gets more than k_rev pairs.
+    k_rev=None keeps the old one-sided rule."""
+    index.index_docs(doc_chunks)
+    index.index_code(code_chunks)
+    docs = {d["id"]: d for d in doc_chunks}
+    reverse = {} if k_rev is None else {d["id"]: set(index.find_related_code(d, k_rev)) for d in doc_chunks}
+    return [(code, docs[doc_id]) for code in code_chunks for doc_id in index.find_related_docs(code, k)
+            if doc_id not in skip and (k_rev is None or code["id"] in reverse[doc_id])]
+
+
 def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex,
                 checker: DriftChecker, k: int = 3, verifier: Verifier | None = None,
-                identifiers: set[str] | None = None) -> list[DriftResult]:
+                identifiers: set[str] | None = None, k_rev: int | None = 5) -> list[DriftResult]:
     results: list[DriftResult] = []
     flagged: set[str] = set()
     for doc in doc_chunks:
@@ -265,22 +278,18 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
                 suggested_fix="remove or update these references", confidence="high",
             ))
 
-    index.index_docs(doc_chunks)
-    docs = {d["id"]: d for d in doc_chunks}
-    for code in code_chunks:
-        for doc_id in index.find_related_docs(code, k):
-            if doc_id in flagged:  # already known stale, skip the LLM call
-                continue
-            try:
-                v = checker.check(code, docs[doc_id])
-                filtered = v.is_stale and not claim_is_grounded(v, docs[doc_id])
-                rejected = (v.is_stale and not filtered and verifier is not None
-                            and not verifier.verify(v.doc_claim, v.code_fact))
-                results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm",
-                                           **{**v.model_dump(), "is_stale": v.is_stale and not (filtered or rejected)},
-                                           filtered=filtered, verifier_rejected=rejected))
-            except DriftError as e:
-                results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm", is_stale=False, error=str(e)))
+    # docs already flagged by the reference check skip the LLM call
+    for code, doc in candidate_pairs(code_chunks, doc_chunks, index, k, k_rev, skip=flagged):
+        try:
+            v = checker.check(code, doc)
+            filtered = v.is_stale and not claim_is_grounded(v, doc)
+            rejected = (v.is_stale and not filtered and verifier is not None
+                        and not verifier.verify(v.doc_claim, v.code_fact))
+            results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm",
+                                       **{**v.model_dump(), "is_stale": v.is_stale and not (filtered or rejected)},
+                                       filtered=filtered, verifier_rejected=rejected))
+        except DriftError as e:
+            results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm", is_stale=False, error=str(e)))
     return results
 
 
