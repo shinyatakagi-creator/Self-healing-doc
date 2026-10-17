@@ -8,7 +8,7 @@ It is a Python project (3.12) that works on Python source and markdown docs.
 
 ## Demo
 
-This is real output from fixture 01 (the code serves `POST /v2/search`, the docs still say `POST /v1/search`). Command: `python -m shd.cli check --fixture fixtures/01_wrong_path_missing_param --max-calls 10`.
+This is real output from fixture 01 (the code serves `POST /v2/search`, the docs still say `POST /v1/search`). Command: `python -m shd.cli check --fixture fixtures/01_wrong_path_missing_param --max-calls 10 --comment-file comment.md`.
 
 ```
 STALE   docs/api.md::Search endpoint
@@ -41,13 +41,13 @@ The wrong path was caught by the deterministic check, so this run used no LLM ca
 1. **Chunk.** Code is split into one chunk per function (routes, parameters and defaults, docstring, plus up to 2000 characters of module context such as constants and other signatures). Docs are split into one chunk per markdown heading. Chunk IDs are stable: `path::function` and `path::heading`.
 2. **Index.** Doc sections and code chunks are embedded with OpenAI `text-embedding-3-small` and stored in a local ChromaDB.
 3. **Retrieve.** A code chunk is compared with a doc section only if the doc is in the chunk's top 3 and the chunk is in the doc's top 5 by similarity. That caps the comparisons per doc section.
-4. **Reference check (no LLM).** Every doc section is checked for routes and names that no longer exist in the code. It is deterministic and cheap.
+4. **Reference check (no LLM).** Looks for routes and names in a doc section that no longer exist in the code. It is deterministic and cheap. In a full run it applies to every doc section; in changed-only mode only to the sections triggered by the changes (see below).
 5. **LLM check, then verifier.** gpt-4o (configurable) gets the code chunk, its module context and the doc section, and must return JSON, validated with pydantic and retried once. A stale flag must quote the doc text and name the code fact it contradicts. The quote must really appear in the doc, and a second call (the verifier) must agree that the two directly contradict. Flags that fail either step are dropped.
 6. **Two tiers.** "Stale" is a reference flag, or an LLM flag whose quote names a code element (a route, function, parameter or config key). "Worth a look" is an LLM flag whose quote is plain prose.
 
 There are two detection types: `reference` (deterministic) and `llm`. Each flag in the report says which one found it.
 
-In changed-only mode (`--base`), only new or modified code chunks start LLM comparisons. Deleted or renamed code has no chunk to compare, so anything that disappeared (a function, route or parameter) triggers the reference check on the doc sections that still mention it.
+In changed-only mode (`--base`), only new or modified code chunks start LLM comparisons. Deleted or renamed code has no chunk to compare, so anything that disappeared (a function, route or parameter) triggers the reference check on the doc sections that still mention it. In this mode the reference check runs only on those sections, plus every section in a doc file the PR changed.
 
 ## Results
 
@@ -78,18 +78,17 @@ The drift check answers "are the docs stale?". The reviewer answers "is this cha
 - Permissions are minimal: contents read and pull-requests write. The reviewer also gets id-token write, which the action needs for its short-lived app token.
 - The drift check passes `--max-calls 30`, so a large PR can't run up API costs. It stops and the comment says how many comparisons were skipped.
 - Jobs have a 15 minute timeout, a concurrency group that cancels older runs, and run on a pinned `ubuntu-24.04`.
-- The reviewer's tools are an allow list (read files, search, `gh pr comment`, `gh pr view`, `gh pr diff`, inline comments) plus a deny list (edit, write, git, `gh pr review`, `gh pr merge`). The action is pinned to a commit, and checkout does not persist credentials.
+- The reviewer's tools are an allow list (read files, search, `gh pr comment`, `gh pr view`, `gh pr diff`, inline comments) plus a deny list (edit, write, git, `gh pr review`, `gh pr merge`). claude-code-action is pinned to a commit SHA, and the other actions (checkout, setup-python) are pinned to major version tags. The reviewer's checkout does not persist credentials.
 - Workflow `run:` steps get values through `env:`, not inline expressions.
 - API keys come only from repo secrets. `.env` and `.chroma/` are gitignored, and a gitleaks pre-commit hook blocks commits that contain secrets. The hook is local: after cloning, run `git config core.hooksPath .githooks`.
 
 ## Known limitations
 
-- **Equivalence false positive (fixture 09):** the LLM can flag a doc that says a param is "empty by default" when the code has `reason: str = ""`. The two are equivalent, but the model treats them as a value conflict and the verifier agrees. It showed up as a stale-tier false positive in 2 of 5 runs in one eval and 1 of 5 in the next.
+- **Equivalence false positive (fixture 09):** the LLM can flag a doc that says a param is "empty by default" when the code has `reason: str = ""`. The two are equivalent, but the model treats them as a value conflict and the verifier agrees. It showed up as a stale-tier false positive in 2 of 5 runs at Stage 6, 2 of 3 in the naming-terms baseline, and 1 of 5 in the latest eval.
 - **Reference check only covers names with an underscore:** a renamed or removed `search` is not caught by the reference check (single-word names are too often ordinary words). Routes, `snake_case` names and call syntax are covered; config keys and file paths are not checked.
 - **The review tier is too small to measure:** it produced 5 flags across 5 eval runs (all from one fixture), so its precision of 1.00 says little. Treat "Worth a look" as unvalidated.
 - **The naming-terms list is a blocklist:** the reference check skips a short fixed list of style words (`snake_case`, `camel_case`, `kebab_case`, ...). A style word that is not on the list (for example `screaming_kebab_case`) is still treated as a missing symbol until it is added to `NAMING_TERMS` in `src/shd/detect.py`.
 - The eval uses 13 small fixtures and gpt-4o only; the anthropic and gemini providers have not been run live.
-- Fixtures 09 to 13 were written after seeing failures, so the results may be better on them than on new code.
 - The LLM sees one function plus a bounded module context, not the whole codebase, so it can miss behavior defined elsewhere.
 - A PR that changes a lot of code can hit the 30-call cap and be only partly checked. The comment says so.
 - Only Python source and markdown docs are supported, and LLM answers are not fully repeatable from run to run.
