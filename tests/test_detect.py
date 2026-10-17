@@ -26,11 +26,7 @@ def load(name):
 REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function", "12_non_function_symbols", "13_naming_terms"}
 
 
-@pytest.mark.parametrize("name", [
-    pytest.param(n, marks=pytest.mark.xfail(strict=True, reason="naming-convention terms flagged, see eval/results.md"))
-    if n == "13_naming_terms" else n
-    for n in SCENARIOS
-])
+@pytest.mark.parametrize("name", SCENARIOS)
 def test_reference_check_per_fixture(name):
     code, docs, expected = load(name)
     ids = code_identifiers_dir(FIXTURES / name / "src")
@@ -447,3 +443,27 @@ def test_tier_doc_ids_and_report_status():
     assert tier_doc_ids(res, "stale") == {"b"} and tier_doc_ids(res, "review") == {"a"}
     status = {r["doc_id"]: r["status"] for r in doc_statuses([{"id": i} for i in "abcd"], res)}
     assert status == {"a": "REVIEW", "b": "STALE", "c": "OK", "d": "OK"}
+
+
+# --- naming terms and plain-prose rules ---
+
+def test_ref_naming_terms_are_skipped_even_when_anchored():
+    text = "Use `snake_case`, `camel_case` and `kebab_case` names; `POST /v2/search` takes `old_param`."
+    assert refs_missing(text) == ["name old_param"]
+
+
+def test_ref_naming_term_defined_in_code_is_not_special(tmp_path):
+    code, _, _ = load("01_wrong_path_missing_param")
+    assert check_references(fake_doc("`POST /v2/search` and `snake_case`"), code, {"snake_case"}) == []
+
+
+def test_ref_plain_prose_underscore_names_are_not_references():
+    assert refs_missing("`POST /v2/search` is fast. Never write old_param or other_thing in prose.") == []
+
+
+def test_ref_plain_call_syntax_counts_without_backticks():
+    assert refs_missing("After a search, run purge_cache() to free memory.") == ["name purge_cache"]
+
+
+def test_ref_plain_call_syntax_with_naming_term_is_skipped():
+    assert refs_missing("Do not call snake_case() anywhere; `POST /v2/search` stays.") == []

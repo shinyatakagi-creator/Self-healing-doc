@@ -260,6 +260,12 @@ def code_symbols(code_chunks: list[dict], identifiers: set[str] | None = None) -
     return paths, names | (identifiers or set())
 
 
+# Words that name a style, not a symbol. Deliberately short; add to it when a new one shows up.
+NAMING_TERMS = frozenset({
+    "snake_case", "camel_case", "kebab_case", "pascal_case", "title_case", "sentence_case", "train_case",
+    "flat_case", "dot_case", "constant_case", "upper_case", "lower_case", "upper_snake_case",
+    "lower_snake_case", "screaming_snake_case",
+})
 PARAM_LIST = re.compile(r"(?im)^\s*(params?|parameters|arguments|args)\b|`\w+` \((?:required|optional)")
 VERSION_SEGMENT = re.compile(r"v\d+")
 
@@ -277,7 +283,8 @@ def check_references(doc_chunk: dict, code_chunks: list[dict], identifiers: set[
     A path is a route if an HTTP method precedes it, or (bare) it is not a filename and shares a
     non-version segment with a real route. A snake_case name is checked only when the section is
     anchored to code: call syntax, a parameter list, or a reference that does exist in the code.
-    Config keys and file paths are not checked."""
+    Only code spans and call syntax count as references (never plain prose), and naming-convention
+    terms (NAMING_TERMS) are skipped. Config keys and file paths are not checked."""
     paths, names = code_symbols(code_chunks, identifiers)
     refs = doc_chunk["refs"]
     code_segments = set().union(*(_segments(p) for p in paths)) if paths else set()
@@ -287,7 +294,7 @@ def check_references(doc_chunk: dict, code_chunks: list[dict], identifiers: set[
     anchored = bool(refs["calls"] or PARAM_LIST.search(doc_chunk["content"])
                     or set(routes) & paths or set(refs["names"]) & names)
     if anchored:
-        missing += [f"name {n}" for n in refs["names"] if "_" in n and n not in names]
+        missing += [f"name {n}" for n in refs["names"] if "_" in n and n not in names and n not in NAMING_TERMS]
     return missing
 
 

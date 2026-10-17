@@ -160,3 +160,8 @@ def test_module_context_is_capped(tmp_path):
     p = write(tmp_path, "m.py", "".join(f"def func_{i}(a, b, c): ...\n" for i in range(300)) + "VALUE = 7\n")
     ctx = chunk_code(p, tmp_path)[0]["context"]
     assert len(ctx) <= CONTEXT_CAP and "VALUE = 7" in ctx  # assignments are kept first
+
+
+def test_doc_refs_plain_call_syntax_only():
+    refs = extract_refs("Run purge_cache() now. Plain old_name and Foo_bar() or other(x) stay out.")
+    assert refs["names"] == ["purge_cache"] and refs["calls"] == ["purge_cache"]
