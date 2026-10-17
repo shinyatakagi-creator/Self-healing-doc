@@ -33,6 +33,8 @@ def main() -> None:
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--max-calls", type=int, default=50, help="cap on LLM calls across all runs")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--label", default="Eval baseline", help="heading for this run in the output")
+    ap.add_argument("--append", action="store_true", help="append to --out instead of overwriting")
     args = ap.parse_args()
 
     complete = budgeted(make_complete(), args.max_calls)
@@ -71,7 +73,7 @@ def main() -> None:
 
     provider = os.getenv("LLM_PROVIDER", "openai")
     lines = [
-        "# Eval baseline",
+        f"## {args.label}",
         "",
         f"{date.today()} | provider `{provider}` model `{os.getenv('LLM_MODEL') or DEFAULT_MODELS[provider]}` | "
         f"embedder `text-embedding-3-small` | runs {args.runs} | LLM calls used {complete.calls}/{args.max_calls}",
@@ -94,7 +96,8 @@ def main() -> None:
     text = "\n".join(lines) + "\n"
     print(text)
     if args.out:
-        args.out.write_text(text)
+        old = args.out.read_text() + "\n" if args.append and args.out.exists() else "# Eval results\n\n"
+        args.out.write_text(old + text)
 
 
 if __name__ == "__main__":

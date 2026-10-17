@@ -1,0 +1,10 @@
+{
+ "stale": [
+  "docs/notes.md::Searching notes"
+ ],
+ "not_stale": [
+  "docs/notes.md::Sharing notes",
+  "docs/notes.md::Exporting notes",
+  "docs/notes.md::Keyboard shortcuts"
+ ]
+}

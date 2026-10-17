@@ -1,0 +1,21 @@
+{
+ "stale": [
+  "docs/api.md::Listing orders"
+ ],
+ "not_stale": [
+  "docs/guide.md::Order lifecycle",
+  "docs/guide.md::Refunds",
+  "docs/guide.md::Notifications",
+  "docs/guide.md::Customer accounts",
+  "docs/guide.md::Pricing and tax",
+  "docs/guide.md::Glossary",
+  "docs/ops.md::Configuration",
+  "docs/ops.md::Logging",
+  "docs/ops.md::Backups",
+  "docs/ops.md::Local development",
+  "docs/ops.md::Deployment",
+  "docs/ops.md::Troubleshooting",
+  "docs/api.md::Creating orders",
+  "docs/api.md::Cancelling orders"
+ ]
+}

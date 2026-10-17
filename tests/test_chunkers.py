@@ -22,6 +22,12 @@ CODE_TRUTH = {
                           {"query": None, "limit": "10", "include_archived": "False"}),
     "07_unrelated_docs": ("src/api.py::search", ("POST", "/v2/search"), {"query": None, "limit": "10"}),
     "08_large_corpus": ("src/api.py::search", ("POST", "/v2/search"), {"query": None, "limit": "20"}),
+    "09_orders_corpus": [
+        ("src/api.py::list_orders", ("GET", "/v1/orders"), {"status": "'open'", "page_size": "25"}),
+        ("src/api.py::create_order", ("POST", "/v1/orders"), {"customer_id": None, "items": None}),
+        ("src/api.py::cancel_order", ("DELETE", "/v1/orders/{order_id}"), {"order_id": None, "reason": "''"}),
+    ],
+    "10_prose_claim": ("src/api.py::search_notes", ("GET", "/v1/notes/search"), {"text": None, "limit": "20"}),
 }
 
 
@@ -31,12 +37,14 @@ def test_every_fixture_has_truth():
 
 @pytest.mark.parametrize("name", SCENARIOS)
 def test_fixture_code_chunks(name):
-    chunk_id, route, params = CODE_TRUTH[name]
+    truth = CODE_TRUTH[name]
+    truth = truth if isinstance(truth, list) else [truth]
     chunks = {c["id"]: c for c in chunk_code_dir(FIXTURES / name / "src")}
-    assert list(chunks) == [chunk_id]
-    c = chunks[chunk_id]
-    assert (c["routes"][0]["method"], c["routes"][0]["path"]) == route
-    assert {p["name"]: p["default"] for p in c["params"]} == params
+    assert list(chunks) == [t[0] for t in truth]
+    for chunk_id, route, params in truth:
+        c = chunks[chunk_id]
+        assert (c["routes"][0]["method"], c["routes"][0]["path"]) == route
+        assert {p["name"]: p["default"] for p in c["params"]} == params
 
 
 @pytest.mark.parametrize("name", SCENARIOS)

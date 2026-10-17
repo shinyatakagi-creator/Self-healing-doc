@@ -1,0 +1,33 @@
+# Eval results
+
+## Stage 0: baseline with held-out fixtures 09 and 10 (no logic changes)
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 3 | LLM calls used 60/150
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors |
+|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 3/3 | - | 0 |
+| 02_removed_param | 1 | 3/3 | - | 0 |
+| 03_changed_default | 1 | 3/3 | - | 0 |
+| 04_deleted_function | 1 | 3/3 | - | 0 |
+| 05_clean_match | 0 | 3/3 | - | 0 |
+| 06_clean_reworded | 0 | 3/3 | - | 0 |
+| 07_unrelated_docs | 0 | 3/3 | - | 0 |
+| 08_large_corpus | 1 | 0/3 | FP docs/guide.md::Searching these docs (3/3); FP docs/guide.md::Result pagination (3/3) | 0 |
+| 09_orders_corpus | 1 | 0/3 | FP docs/ops.md::Logging (3/3); FP docs/ops.md::Configuration (3/3); FP docs/ops.md::Deployment (3/3); FP docs/ops.md::Backups (3/3) | 0 |
+| 10_prose_claim | 1 | 3/3 | - | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 0.54 (21/39) | 1.00 (21/21) |
+| reference check | 0.43 (9/21) | 0.43 (9/21) |
+| LLM check (recall over stale docs the reference check missed) | 0.67 (12/18) | 1.00 (12/12) |
+
+False positive reasons (first seen):
+
+- `08_large_corpus FP docs/guide.md::Searching these docs`: The documentation does not mention the '/v2/search' route or its parameters.
+- `08_large_corpus FP docs/guide.md::Result pagination`: The documentation does not mention the '/v2/search' route or the 'query' and 'limit' parameters.
+- `09_orders_corpus FP docs/ops.md::Logging`: doc references no longer in code: route /var/log/orders/app.log
+- `09_orders_corpus FP docs/ops.md::Configuration`: doc references no longer in code: name max_connections, name request_timeout
+- `09_orders_corpus FP docs/ops.md::Deployment`: doc references no longer in code: name debug_mode
+- `09_orders_corpus FP docs/ops.md::Backups`: doc references no longer in code: name pg_dump
