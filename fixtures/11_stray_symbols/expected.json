@@ -1,0 +1,12 @@
+{
+ "stale": [],
+ "not_stale": [
+  "docs/api.md::Listing reports",
+  "docs/ops.md::Environment",
+  "docs/ops.md::Command line",
+  "docs/ops.md::Files",
+  "docs/ops.md::Links",
+  "docs/ops.md::Retries",
+  "docs/ops.md::Scheduling"
+ ]
+}

@@ -26,7 +26,7 @@ def load(name):
 REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function"}
 
 
-KNOWN_REFERENCE_FALSE_POSITIVES = {"09_orders_corpus"}  # stray paths / snake_case words in ops docs; unfixed baseline
+KNOWN_REFERENCE_FALSE_POSITIVES = {"09_orders_corpus", "11_stray_symbols"}  # stray paths / snake_case words in ops docs; unfixed baseline
 
 
 @pytest.mark.parametrize("name", [
