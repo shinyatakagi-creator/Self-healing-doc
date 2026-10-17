@@ -4,16 +4,20 @@ from pathlib import Path
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 BACKTICK = re.compile(r"`([^`\n]+)`")
 ROUTE = re.compile(r"(?:GET|POST|PUT|DELETE|PATCH)\s+(/\S*)")
+SKIPPED_FENCE = re.compile(r"^```(?:bash|sh|shell|console|yaml|ini|toml|json)\b.*?^```", re.M | re.S)
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\(.*\))?")
 
 
 def extract_refs(text: str) -> dict:
-    """Pull code-looking references out of backtick spans."""
-    paths, names, config_keys = set(), set(), set()
+    """Pull code-looking references out of backtick spans. Shell/config fenced blocks are ignored.
+    `routes` are the paths written with an HTTP method in front; `calls` are names written as `name(...)`."""
+    text = SKIPPED_FENCE.sub("", text)
+    paths, routes, names, calls, config_keys = set(), set(), set(), set(), set()
     for span in BACKTICK.findall(text):
         span = span.strip()
         if m := ROUTE.search(span):
             paths.add(m.group(1))
+            routes.add(m.group(1))
         elif span.startswith("/") or ("/" in span and "." in span):
             paths.add(span)
         elif re.fullmatch(r"[A-Z][A-Z0-9_]+", span):
@@ -22,7 +26,10 @@ def extract_refs(text: str) -> dict:
             config_keys.add(span)
         elif IDENT.fullmatch(span):
             names.add(span.split("(")[0])
-    return {"paths": sorted(paths), "names": sorted(names), "config_keys": sorted(config_keys)}
+            if "(" in span:
+                calls.add(span.split("(")[0])
+    return {k: sorted(v) for k, v in
+            (("paths", paths), ("routes", routes), ("names", names), ("calls", calls), ("config_keys", config_keys))}
 
 
 def chunk_docs(filepath: str | Path, root: str | Path | None = None) -> list[dict]:

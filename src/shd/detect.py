@@ -178,16 +178,34 @@ def code_symbols(code_chunks: list[dict]) -> tuple[set[str], set[str]]:
     return paths, names
 
 
+PARAM_LIST = re.compile(r"(?im)^\s*(params?|parameters|arguments|args)\b|`\w+` \((?:required|optional)")
+VERSION_SEGMENT = re.compile(r"v\d+")
+
+
+def _segments(path: str) -> set[str]:
+    return {s for s in path.strip("/").split("/") if s and not VERSION_SEGMENT.fullmatch(s)}
+
+
+def _looks_like_file(path: str) -> bool:
+    return bool(re.search(r"\.\w{1,5}$", path.rsplit("/", 1)[-1]))
+
+
 def check_references(doc_chunk: dict, code_chunks: list[dict]) -> list[str]:
     """Doc refs that no longer exist in the code. No LLM involved.
-    ponytail: bare `/x` paths count as routes (a doc mentioning `/var/log` would be flagged),
-    and only names with an underscore are checked so words like `limit` or `true` never are.
+    A path is a route if an HTTP method precedes it, or (bare) it is not a filename and shares a
+    non-version segment with a real route. A snake_case name is checked only when the section is
+    anchored to code: call syntax, a parameter list, or a reference that does exist in the code.
     Config keys and file paths are not checked."""
     paths, names = code_symbols(code_chunks)
-    missing = []
-    if paths:
-        missing += [f"route {p}" for p in doc_chunk["refs"]["paths"] if p.startswith("/") and p not in paths]
-    missing += [f"name {n}" for n in doc_chunk["refs"]["names"] if "_" in n and n not in names]
+    refs = doc_chunk["refs"]
+    code_segments = set().union(*(_segments(p) for p in paths)) if paths else set()
+    routes = [p for p in refs["paths"] if p.startswith("/") and (
+        p in refs["routes"] or (not _looks_like_file(p) and _segments(p) & code_segments))]
+    missing = [f"route {p}" for p in routes if p not in paths] if paths else []
+    anchored = bool(refs["calls"] or PARAM_LIST.search(doc_chunk["content"])
+                    or set(routes) & paths or set(refs["names"]) & names)
+    if anchored:
+        missing += [f"name {n}" for n in refs["names"] if "_" in n and n not in names]
     return missing
 
 

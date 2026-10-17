@@ -63,7 +63,14 @@ def test_doc_refs_wrong_path_fixture():
 
 def test_doc_refs_kinds():
     refs = extract_refs("Set `API_URL` and `db.pool_size`, edit `src/a.py`, call `GET /x/{id}` or `run(a)`.")
-    assert refs == {"paths": ["/x/{id}", "src/a.py"], "names": ["run"], "config_keys": ["API_URL", "db.pool_size"]}
+    assert refs == {"paths": ["/x/{id}", "src/a.py"], "routes": ["/x/{id}"], "names": ["run"],
+                    "calls": ["run"], "config_keys": ["API_URL", "db.pool_size"]}
+
+
+def test_doc_refs_skip_shell_and_config_fences():
+    text = "Use `real_name`.\n\n```bash\n`GET /x` and `fake_name`\n```\n\n```yaml\nkey: `other_name`\n```\n"
+    assert extract_refs(text)["names"] == ["real_name"]
+    assert extract_refs(text)["routes"] == []
 
 
 def write(tmp_path, name, text):

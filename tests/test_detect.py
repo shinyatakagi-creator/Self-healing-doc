@@ -26,14 +26,7 @@ def load(name):
 REFERENCE_STALE = {"01_wrong_path_missing_param", "02_removed_param", "04_deleted_function"}
 
 
-KNOWN_REFERENCE_FALSE_POSITIVES = {"09_orders_corpus", "11_stray_symbols"}  # stray paths / snake_case words in ops docs; unfixed baseline
-
-
-@pytest.mark.parametrize("name", [
-    pytest.param(n, marks=pytest.mark.xfail(strict=True, reason="reference check false positives, see eval/results.md"))
-    if n in KNOWN_REFERENCE_FALSE_POSITIVES else n
-    for n in SCENARIOS
-])
+@pytest.mark.parametrize("name", SCENARIOS)
 def test_reference_check_per_fixture(name):
     code, docs, expected = load(name)
     flagged = {d["id"] for d in docs if check_references(d, code)}
@@ -198,3 +191,46 @@ def test_fake_checker_claims_pass_the_filter(tmp_path):
     code, docs, _ = load("03_changed_default")
     (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), FakeDriftChecker())
     assert r.is_stale and r.doc_claim == "default 10"
+
+
+# --- reference check rules ---
+
+def fake_doc(content, **refs):
+    from shd.chunk_docs import extract_refs
+    return {"id": "d.md::S", "content": content, "refs": extract_refs(content)}
+
+
+def refs_missing(content):
+    code, _, _ = load("01_wrong_path_missing_param")  # route /v2/search, params query/limit/include_archived
+    return check_references(fake_doc(content), code)
+
+
+def test_ref_bare_path_without_shared_segment_is_not_a_route():
+    assert refs_missing("Logs go to `/var/log/app.log`; see `/tmp/cache`.") == []
+
+
+def test_ref_bare_path_sharing_a_segment_is_a_route():
+    assert refs_missing("Call `/v1/search`.") == ["route /v1/search"]
+
+
+def test_ref_file_path_sharing_a_segment_is_not_a_route():
+    assert refs_missing("Writes `/exports/search.csv`.") == []
+
+
+def test_ref_method_prefixed_path_is_always_a_route():
+    assert refs_missing("`DELETE /whatever/else`") == ["route /whatever/else"]
+
+
+def test_ref_snake_case_unanchored_is_ignored():
+    assert refs_missing("Set `max_workers` and `retry_count` in the config.") == []
+
+
+def test_ref_snake_case_anchored_by_call_param_list_or_real_ref():
+    assert refs_missing("Use `old_helper(x)`.") == ["name old_helper"]
+    assert refs_missing("Params: `old_param` (required)") == ["name old_param"]
+    assert refs_missing("`POST /v2/search` takes `old_param`.") == ["name old_param"]
+    assert refs_missing("Takes `limit` and `old_param`.") == ["name old_param"]
+
+
+def test_ref_fenced_shell_block_is_ignored():
+    assert refs_missing("Run:\n\n```bash\n`DELETE /x` `old_helper(1)`\n```\n") == []

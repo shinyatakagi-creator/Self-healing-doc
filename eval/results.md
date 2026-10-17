@@ -101,3 +101,33 @@ False positive reasons (first seen):
 - `11_stray_symbols FP docs/ops.md::Files`: doc references no longer in code: route /tmp/export_cache, route /usr/local/bin/shd
 - `11_stray_symbols FP docs/ops.md::Retries`: doc references no longer in code: name backoff_seconds, name retry_count
 - `11_stray_symbols FP docs/ops.md::Environment`: doc references no longer in code: name max_workers
+
+## Stage 2b: reference check with general rules
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 3 | LLM calls used 69/200
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered |
+|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 3/3 | - | 0 | 0 |
+| 02_removed_param | 1 | 3/3 | - | 0 | 0 |
+| 03_changed_default | 1 | 3/3 | - | 0 | 0 |
+| 04_deleted_function | 1 | 3/3 | - | 0 | 0 |
+| 05_clean_match | 0 | 3/3 | - | 0 | 0 |
+| 06_clean_reworded | 0 | 3/3 | - | 0 | 0 |
+| 07_unrelated_docs | 0 | 3/3 | - | 0 | 0 |
+| 08_large_corpus | 1 | 0/3 | FP docs/guide.md::Searching these docs (3/3) | 0 | 0 |
+| 09_orders_corpus | 1 | 3/3 | - | 0 | 0 |
+| 10_prose_claim | 1 | 3/3 | - | 0 | 0 |
+| 11_stray_symbols | 0 | 3/3 | - | 0 | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 0.88 (21/24) | 1.00 (21/21) |
+| reference check | 1.00 (9/9) | 0.43 (9/21) |
+| LLM check (recall over stale docs the reference check missed) | 0.80 (12/15) | 1.00 (12/12) |
+
+Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `08_large_corpus FP docs/guide.md::Searching these docs`: The documentation does not mention the '/v2/search' endpoint or its parameters.
