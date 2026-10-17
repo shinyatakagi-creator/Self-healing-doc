@@ -1,0 +1,9 @@
+{
+ "stale": [
+  "docs/api.md::Flushing"
+ ],
+ "not_stale": [
+  "docs/api.md::Batch processing",
+  "docs/guide.md::Getting started"
+ ]
+}

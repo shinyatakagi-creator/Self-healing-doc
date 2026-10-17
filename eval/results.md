@@ -189,3 +189,35 @@ False positive reasons (first seen):
 
 Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
 Verifier rejected flags: 3 total, 0 of them on docs that really were stale.
+
+## Stage 4 baseline (3 runs): + held-out fixture 12, before any Stage 4 logic change
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 3 | LLM calls used 89/300 | verifier on
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 3/3 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 3/3 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 3/3 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 3/3 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 3/3 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 3/3 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 3/3 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 3/3 | - | 0 | 0 | 3 |
+| 09_orders_corpus | 1 | 3/3 | - | 0 | 0 | 0 |
+| 10_prose_claim | 1 | 3/3 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 3/3 | - | 0 | 0 | 0 |
+| 12_non_function_symbols | 1 | 0/3 | FP docs/api.md::Batch processing (3/3) | 0 | 0 | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 0.89 (24/27) | 1.00 (24/24) |
+| reference check | 0.80 (12/15) | 0.50 (12/24) |
+| LLM check (recall over stale docs the reference check missed) | 1.00 (12/12) | 1.00 (12/12) |
+
+Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
+Verifier rejected flags: 3 total, 0 of them on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `12_non_function_symbols FP docs/api.md::Batch processing`: doc references no longer in code: name cache_ttl, name max_batch_size, name retry_limit

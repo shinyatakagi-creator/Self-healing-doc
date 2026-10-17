@@ -28,6 +28,7 @@ CODE_TRUTH = {
         ("src/api.py::cancel_order", ("DELETE", "/v1/orders/{order_id}"), {"order_id": None, "reason": "''"}),
     ],
     "11_stray_symbols": ("src/api.py::list_reports", ("GET", "/v1/reports"), {"owner": None, "page_size": "25"}),
+    "12_non_function_symbols": ("src/api.py::process_batch", ("POST", "/v1/batches"), {"items": None}),
     "10_prose_claim": ("src/api.py::search_notes", ("GET", "/v1/notes/search"), {"text": None, "limit": "20"}),
 }
 
