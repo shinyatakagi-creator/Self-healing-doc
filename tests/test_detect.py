@@ -132,10 +132,10 @@ def test_live_fixture(name, tmp_path, live_embedder):
 
 
 def test_plumbing_budget_aborts_run_instead_of_recording_an_error(tmp_path):
-    from shd.detect import CallBudgetExceeded, budgeted
+    from shd.detect import CallBudget, CallBudgetExceeded
 
     code, docs, _ = load("03_changed_default")
-    checker = LLMDriftChecker(budgeted(stub(GOOD), 0))
+    checker = LLMDriftChecker(CallBudget(0).wrap(stub(GOOD)))
     with pytest.raises(CallBudgetExceeded):
         check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), checker)
 
@@ -234,3 +234,60 @@ def test_ref_snake_case_anchored_by_call_param_list_or_real_ref():
 
 def test_ref_fenced_shell_block_is_ignored():
     assert refs_missing("Run:\n\n```bash\n`DELETE /x` `old_helper(1)`\n```\n") == []
+
+
+# --- verifier (plumbing) ---
+
+from shd.detect import CallBudget, FakeVerifier, LLMVerifier
+
+
+def test_verifier_yes_no_and_garbage():
+    assert LLMVerifier(lambda p: "Yes, they conflict.").verify("a", "b")
+    assert not LLMVerifier(lambda p: "no").verify("a", "b")
+    assert not LLMVerifier(lambda p: "I am not sure").verify("a", "b")
+
+
+def test_verifier_prompt_has_only_claim_and_fact():
+    seen = []
+    LLMVerifier(lambda p: seen.append(p) or "no").verify("default 10", "limit defaults to 20")
+    assert "default 10" in seen[0] and "limit defaults to 20" in seen[0] and "directly contradict" in seen[0]
+
+
+def test_verifier_api_failure_is_drift_error():
+    def boom(p):
+        raise RuntimeError("down")
+
+    with pytest.raises(DriftError, match="down"):
+        LLMVerifier(boom).verify("a", "b")
+
+
+def test_verifier_rejection_discards_flag(tmp_path):
+    code, docs, _ = load("03_changed_default")
+    index = DocIndex(tmp_path / "c", FakeEmbedder())
+    (r,) = check_drift(code, docs, index, Canned(claim_verdict()), verifier=FakeVerifier(False))
+    assert not r.is_stale and r.verifier_rejected and not r.filtered
+
+
+def test_verifier_acceptance_keeps_flag_and_filtered_flags_skip_verifier(tmp_path):
+    code, docs, _ = load("03_changed_default")
+    ok = check_drift(code, docs, DocIndex(tmp_path / "a", FakeEmbedder()), Canned(claim_verdict()), verifier=FakeVerifier(True))
+    assert ok[0].is_stale and not ok[0].verifier_rejected
+
+    class Boom:
+        def verify(self, *a):
+            raise AssertionError("verifier must not run for a filtered flag")
+
+    (r,) = check_drift(code, docs, DocIndex(tmp_path / "b", FakeEmbedder()),
+                       Canned(claim_verdict(doc_claim="nope")), verifier=Boom())
+    assert r.filtered and not r.verifier_rejected
+
+
+def test_verifier_error_is_recorded_not_raised(tmp_path):
+    code, docs, _ = load("03_changed_default")
+
+    class Down:
+        def verify(self, *a):
+            raise DriftError("down")
+
+    (r,) = check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), Canned(claim_verdict()), verifier=Down())
+    assert r.error and not r.is_stale

@@ -6,17 +6,18 @@ from dotenv import load_dotenv
 
 from shd.chunk_code import chunk_code_dir
 from shd.chunk_docs import chunk_docs_dir
-from shd.detect import DriftChecker, DriftResult, FakeDriftChecker, LLMDriftChecker, check_drift, make_complete
+from shd.detect import (DriftChecker, DriftResult, FakeDriftChecker, FakeVerifier, LLMDriftChecker, LLMVerifier,
+                        Verifier, check_drift, make_complete)
 from shd.embeddings import Embedder, FakeEmbedder, OpenAIEmbedder
 from shd.index import DocIndex
 from shd.report import print_summary, write_report
 
 
-def run_check(root: Path, embedder: Embedder, checker: DriftChecker) -> tuple[list[dict], list[DriftResult]]:
+def run_check(root: Path, embedder: Embedder, checker: DriftChecker, verifier: Verifier | None = None) -> tuple[list[dict], list[DriftResult]]:
     code = chunk_code_dir(root / "src")
     docs = chunk_docs_dir(root / "docs")
     with tempfile.TemporaryDirectory() as tmp:
-        return docs, check_drift(code, docs, DocIndex(tmp, embedder), checker)
+        return docs, check_drift(code, docs, DocIndex(tmp, embedder), checker, verifier=verifier)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -31,7 +32,8 @@ def main(argv: list[str] | None = None) -> None:
 
     embedder = FakeEmbedder() if args.fake else OpenAIEmbedder()
     checker = FakeDriftChecker() if args.fake else LLMDriftChecker(make_complete())
-    docs, results = run_check(args.fixture, embedder, checker)
+    verifier = FakeVerifier() if args.fake else LLMVerifier(make_complete(json_mode=False))
+    docs, results = run_check(args.fixture, embedder, checker, verifier)
     print_summary(docs, results)
     write_report(results, args.out)
     print(f"\nwrote {args.out}")

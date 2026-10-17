@@ -13,7 +13,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from shd.cli import run_check
-from shd.detect import CallBudgetExceeded, DEFAULT_MODELS, LLMDriftChecker, budgeted, make_complete, stale_doc_ids
+from shd.detect import CallBudget, CallBudgetExceeded, DEFAULT_MODELS, LLMDriftChecker, LLMVerifier, make_complete, stale_doc_ids
 from shd.embeddings import OpenAIEmbedder
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -34,17 +34,22 @@ def main() -> None:
     ap.add_argument("--max-calls", type=int, default=50, help="cap on LLM calls across all runs")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--label", default="Eval baseline", help="heading for this run in the output")
+    ap.add_argument("--no-verifier", dest="verifier", action="store_false", help="skip the verifier pass")
     ap.add_argument("--append", action="store_true", help="append to --out instead of overwriting")
     args = ap.parse_args()
 
-    complete = budgeted(make_complete(), args.max_calls)
-    checker, embedder = LLMDriftChecker(complete), OpenAIEmbedder()
+    budget = CallBudget(args.max_calls)
+    checker = LLMDriftChecker(budget.wrap(make_complete()))
+    verifier = LLMVerifier(budget.wrap(make_complete(json_mode=False))) if args.verifier else None
+    embedder = OpenAIEmbedder()
     scenarios = sorted(p for p in FIXTURES.iterdir() if p.is_dir())
 
     passes = Counter()
     errors = Counter()
     filtered = Counter()  # scenario -> discarded flags
     filtered_true = 0  # discarded flags on docs that really were stale
+    rejected = Counter()  # scenario -> flags the verifier rejected
+    rejected_true = 0
     wrong = defaultdict(Counter)  # scenario -> "FP doc" / "FN doc" -> runs
     reasons: dict[str, str] = {}
     expected_n = {}
@@ -53,7 +58,7 @@ def main() -> None:
         for _ in range(args.runs):
             for sc in scenarios:
                 expected = json.loads((sc / "expected.json").read_text())["stale"]
-                docs, results = run_check(sc, embedder, checker)
+                docs, results = run_check(sc, embedder, checker, verifier)
                 expected, got = set(expected), stale_doc_ids(results)
                 ref = {r.doc_id for r in results if r.detection == "reference" and r.is_stale}
                 llm = {r.doc_id for r in results if r.detection == "llm" and r.is_stale}
@@ -63,6 +68,9 @@ def main() -> None:
                 dropped = {r.doc_id for r in results if r.filtered}
                 filtered[sc.name] += len(dropped)
                 filtered_true += len(dropped & expected)
+                vr = {r.doc_id for r in results if r.verifier_rejected}
+                rejected[sc.name] += len(vr)
+                rejected_true += len(vr & expected)
                 for d in got - expected:
                     wrong[sc.name][f"FP {d}"] += 1
                     reasons.setdefault(f"{sc.name} FP {d}", next(r.reason for r in results if r.doc_id == d and r.is_stale))
@@ -81,22 +89,23 @@ def main() -> None:
         f"## {args.label}",
         "",
         f"{date.today()} | provider `{provider}` model `{os.getenv('LLM_MODEL') or DEFAULT_MODELS[provider]}` | "
-        f"embedder `text-embedding-3-small` | runs {args.runs} | LLM calls used {complete.calls}/{args.max_calls}",
+        f"embedder `text-embedding-3-small` | runs {args.runs} | LLM calls used {budget.calls}/{args.max_calls} | verifier {'on' if args.verifier else 'off'}",
         "",
-        "| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered |",
-        "|---|---|---|---|---|---|",
+        "| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |",
+        "|---|---|---|---|---|---|---|",
     ]
     for sc in scenarios:
         n = sc.name
         w = "; ".join(f"{k} ({v}/{args.runs})" for k, v in wrong[n].items()) or "-"
-        lines.append(f"| {n} | {expected_n[n]} | {passes[n]}/{args.runs} | {w} | {errors[n]} | {filtered[n]} |")
+        lines.append(f"| {n} | {expected_n[n]} | {passes[n]}/{args.runs} | {w} | {errors[n]} | {filtered[n]} | {rejected[n]} |")
     lines += ["", "| Check | Precision | Recall |", "|---|---|---|"]
     notes = {"overall": "overall", "reference": "reference check", "llm": "LLM check (recall over stale docs the reference check missed)"}
     for k, label in notes.items():
         p, r = prf(tot[k]["tp"], tot[k]["fp"], tot[k]["fn"])
         lines.append(f"| {label} | {p} | {r} |")
     lines += ["", f"Filtered flags (LLM said stale, claim check discarded it): {sum(filtered.values())} total, "
-              f"{filtered_true} of them on docs that really were stale."]
+              f"{filtered_true} of them on docs that really were stale.",
+              f"Verifier rejected flags: {sum(rejected.values())} total, {rejected_true} of them on docs that really were stale."]
     if reasons:
         lines += ["", "False positive reasons (first seen):", ""]
         lines += [f"- `{k}`: {v}" for k, v in reasons.items()]

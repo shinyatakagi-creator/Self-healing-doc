@@ -131,3 +131,61 @@ Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on
 False positive reasons (first seen):
 
 - `08_large_corpus FP docs/guide.md::Searching these docs`: The documentation does not mention the '/v2/search' endpoint or its parameters.
+
+## Stage 2 (5 runs): general reference rules, no verifier
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 5 | LLM calls used 115/250 | verifier off
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 5/5 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 5/5 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 5/5 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 5/5 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 5/5 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 1/5 | FP docs/guide.md::Searching these docs (4/5) | 0 | 0 | 0 |
+| 09_orders_corpus | 1 | 5/5 | - | 0 | 0 | 0 |
+| 10_prose_claim | 1 | 5/5 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 5/5 | - | 0 | 0 | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 0.90 (35/39) | 1.00 (35/35) |
+| reference check | 1.00 (15/15) | 0.43 (15/35) |
+| LLM check (recall over stale docs the reference check missed) | 0.83 (20/24) | 1.00 (20/20) |
+
+Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
+Verifier rejected flags: 0 total, 0 of them on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `08_large_corpus FP docs/guide.md::Searching these docs`: The documentation does not mention the '/v2/search' endpoint or its parameters.
+
+## Stage 3 (5 runs): + LLM verifier pass
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 5 | LLM calls used 140/250 | verifier on
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 5/5 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 5/5 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 5/5 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 5/5 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 5/5 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 5/5 | - | 0 | 0 | 3 |
+| 09_orders_corpus | 1 | 5/5 | - | 0 | 0 | 0 |
+| 10_prose_claim | 1 | 5/5 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 5/5 | - | 0 | 0 | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 1.00 (35/35) | 1.00 (35/35) |
+| reference check | 1.00 (15/15) | 0.43 (15/35) |
+| LLM check (recall over stale docs the reference check missed) | 1.00 (20/20) | 1.00 (20/20) |
+
+Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
+Verifier rejected flags: 3 total, 0 of them on docs that really were stale.

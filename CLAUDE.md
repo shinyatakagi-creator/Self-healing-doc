@@ -23,3 +23,4 @@ Detects when code changes make markdown docs inaccurate, points at the stale sec
 - Provider models: `LLM_MODEL` env overrides the per-provider default.
 - LLM stale flags must carry `doc_claim` (verbatim doc quote, matched after normalizing case/backticks/whitespace) and `code_fact`; otherwise the flag is discarded and counted as `filtered`. The filter checks that the quote exists, not that it contradicts the code.
 - `eval/results.md` is the running log of eval runs (stage by stage); `eval/baseline.md` is the earlier pre-tuning baseline.
+- Verifier: each LLM stale flag that passes the quote check gets one extra temperature-0 call with only `doc_claim` and `code_fact` ("does the first directly contradict the second?"). Anything but a leading "yes" discards the flag (`verifier_rejected`). Verifier calls count toward `--max-calls`. `eval/run_eval.py --no-verifier` measures without it.

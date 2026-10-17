@@ -48,6 +48,7 @@ class DriftResult(BaseModel):
     doc_claim: str = ""
     code_fact: str = ""
     filtered: bool = False  # LLM said stale but the flag failed the claim check and was discarded
+    verifier_rejected: bool = False  # flag passed the claim check but the verifier said no
     error: str | None = None
 
 
@@ -59,20 +60,59 @@ class CallBudgetExceeded(Exception):
     pass
 
 
-def budgeted(complete: Callable[[str], str], max_calls: int) -> Callable[[str], str]:
-    """Counts LLM calls (retries included) and aborts the run past the cap. Embedding calls are not counted."""
-    def wrapper(prompt: str) -> str:
-        if wrapper.calls >= max_calls:
-            raise CallBudgetExceeded(f"hit --max-calls={max_calls}")
-        wrapper.calls += 1
-        return complete(prompt)
+class CallBudget:
+    """Counts LLM calls (retries and verifier calls included) and aborts past the cap.
+    Embedding calls are not counted."""
 
-    wrapper.calls = 0
-    return wrapper
+    def __init__(self, max_calls: int):
+        self.max_calls, self.calls = max_calls, 0
+
+    def wrap(self, complete: Callable[[str], str]) -> Callable[[str], str]:
+        def wrapper(prompt: str) -> str:
+            if self.calls >= self.max_calls:
+                raise CallBudgetExceeded(f"hit --max-calls={self.max_calls}")
+            self.calls += 1
+            return complete(prompt)
+
+        return wrapper
 
 
 class DriftChecker(Protocol):
     def check(self, code_chunk: dict, doc_chunk: dict) -> Verdict: ...
+
+
+class Verifier(Protocol):
+    def verify(self, doc_claim: str, code_fact: str) -> bool: ...
+
+
+VERIFY_PROMPT = """Documentation claim: {doc_claim}
+Code fact: {code_fact}
+
+Does the first directly contradict the second? Answer yes or no."""
+
+
+class LLMVerifier:
+    """Second opinion on a flag, seeing only the claim and the fact. Anything but a leading "yes" rejects."""
+
+    def __init__(self, complete: Callable[[str], str]):
+        self.complete = complete
+
+    def verify(self, doc_claim: str, code_fact: str) -> bool:
+        try:
+            text = self.complete(VERIFY_PROMPT.format(doc_claim=doc_claim, code_fact=code_fact))
+        except CallBudgetExceeded:
+            raise
+        except Exception as e:
+            raise DriftError(f"verifier call failed: {e}") from e
+        return text.strip().lower().startswith("yes")
+
+
+class FakeVerifier:
+    def __init__(self, answer: bool = True):
+        self.answer = answer
+
+    def verify(self, doc_claim: str, code_fact: str) -> bool:
+        return self.answer
 
 
 def _norm(text: str) -> str:
@@ -113,7 +153,7 @@ class LLMDriftChecker:
         raise DriftError(f"malformed LLM output after retry: {last}")
 
 
-def make_complete(provider: str | None = None) -> Callable[[str], str]:
+def make_complete(provider: str | None = None, json_mode: bool = True) -> Callable[[str], str]:
     provider = (provider or os.getenv("LLM_PROVIDER") or "openai").lower()
     if provider not in DEFAULT_MODELS:
         raise ValueError(f"unknown LLM_PROVIDER: {provider}")
@@ -124,21 +164,21 @@ def make_complete(provider: str | None = None) -> Callable[[str], str]:
         client = OpenAI()
         return lambda p: client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": p}],
-            response_format={"type": "json_object"}, temperature=0,
+            temperature=0, **({"response_format": {"type": "json_object"}} if json_mode else {}),
         ).choices[0].message.content
     if provider == "anthropic":
         import anthropic
 
         client = anthropic.Anthropic()
         return lambda p: client.messages.create(
-            model=model, max_tokens=1024, messages=[{"role": "user", "content": p}],
+            model=model, max_tokens=1024, temperature=0, messages=[{"role": "user", "content": p}],
         ).content[0].text
     if provider == "gemini":
         from google import genai
 
         client = genai.Client()
         return lambda p: client.models.generate_content(
-            model=model, contents=p, config={"response_mime_type": "application/json"},
+            model=model, contents=p, config={"temperature": 0, **({"response_mime_type": "application/json"} if json_mode else {})},
         ).text
 
 
@@ -210,7 +250,7 @@ def check_references(doc_chunk: dict, code_chunks: list[dict]) -> list[str]:
 
 
 def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex,
-                checker: DriftChecker, k: int = 3) -> list[DriftResult]:
+                checker: DriftChecker, k: int = 3, verifier: Verifier | None = None) -> list[DriftResult]:
     results: list[DriftResult] = []
     flagged: set[str] = set()
     for doc in doc_chunks:
@@ -231,9 +271,11 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
             try:
                 v = checker.check(code, docs[doc_id])
                 filtered = v.is_stale and not claim_is_grounded(v, docs[doc_id])
+                rejected = (v.is_stale and not filtered and verifier is not None
+                            and not verifier.verify(v.doc_claim, v.code_fact))
                 results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm",
-                                           **{**v.model_dump(), "is_stale": v.is_stale and not filtered},
-                                           filtered=filtered))
+                                           **{**v.model_dump(), "is_stale": v.is_stale and not (filtered or rejected)},
+                                           filtered=filtered, verifier_rejected=rejected))
             except DriftError as e:
                 results.append(DriftResult(code_id=code["id"], doc_id=doc_id, detection="llm", is_stale=False, error=str(e)))
     return results
