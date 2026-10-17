@@ -33,3 +33,37 @@ def test_cli_requires_one_mode():
     import pytest
     with pytest.raises(SystemExit):
         main(["check", "--code", "src"])
+
+
+def _project(root):
+    (root / "src").mkdir()
+    (root / "src" / "a.py").write_text('def f(x): ...\n')
+    (root / "README.md").write_text("## F\n\ntext\n")
+    return [root / "src"], [root / "README.md"]
+
+
+def test_paths_outside_cwd_use_git_root(tmp_path, monkeypatch):
+    import git
+    from shd.cli import base_dir, chunks_from_paths
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git.Repo.init(repo)
+    code, docs = _project(repo)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    assert base_dir(code + docs) == repo.resolve()
+    c, d, _ = chunks_from_paths(code, docs, base_dir(code + docs))
+    assert c[0]["id"] == "src/a.py::f" and d[0]["id"] == "README.md::F"
+
+
+def test_paths_outside_git_use_common_parent(tmp_path, monkeypatch):
+    from shd.cli import base_dir, chunks_from_paths
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    code, docs = _project(proj)
+    monkeypatch.chdir(tmp_path.parent)
+    c, d, _ = chunks_from_paths(code, docs, base_dir(code + docs))
+    assert c[0]["id"] == "src/a.py::f" and d[0]["id"] == "README.md::F"

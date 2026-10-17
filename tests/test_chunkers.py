@@ -133,3 +133,29 @@ def test_code_identifiers_do_not_include_plain_loads(tmp_path):
 
     p = write(tmp_path, "m.py", "def f():\n    return undefined_name + other.attr\n")
     assert {"undefined_name", "attr", "other"}.isdisjoint(code_identifiers(p))
+
+
+# --- module context ---
+
+def test_module_context_contents_and_exclusion(tmp_path):
+    p = write(tmp_path, "m.py", (
+        "import os\n\nMAX_ITEMS = 100\nname: str = 'x'\n\n"
+        "class Box:\n    size: int = 1\n    label = 'a'\n\n    def grow(self, by: int = 2) -> int:\n        return by\n\n"
+        "def target(a):\n    return a\n\n"
+        "async def other(b, *, flag=False) -> None:\n    secret_body_text = 1\n"
+    ))
+    chunks = {c["id"]: c for c in chunk_code(p, tmp_path)}
+    ctx = chunks["m.py::target"]["context"]
+    assert "MAX_ITEMS = 100" in ctx and "name: str = 'x'" in ctx
+    assert "Box: size: int = 1" in ctx and "Box: label = 'a'" in ctx
+    assert "class Box" in ctx and "def Box.grow(self, by: int=2) -> int" in ctx
+    assert "async def other(b, *, flag=False) -> None" in ctx
+    assert "def target" not in ctx and "secret_body_text" not in ctx and "return by" not in ctx
+
+
+def test_module_context_is_capped(tmp_path):
+    from shd.chunk_code import CONTEXT_CAP
+
+    p = write(tmp_path, "m.py", "".join(f"def func_{i}(a, b, c): ...\n" for i in range(300)) + "VALUE = 7\n")
+    ctx = chunk_code(p, tmp_path)[0]["context"]
+    assert len(ctx) <= CONTEXT_CAP and "VALUE = 7" in ctx  # assignments are kept first

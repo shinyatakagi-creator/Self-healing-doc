@@ -330,3 +330,35 @@ def test_pairing_skips_reference_flagged_docs(tmp_path):
     code, docs, _ = load("04_deleted_function")
     pairs = candidate_pairs(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), skip={"docs/api.md::Delete item"})
     assert {d["id"] for _, d in pairs} == {"docs/api.md::Health check"}
+
+
+# --- context reaches both prompts ---
+
+def test_drift_prompt_and_verifier_prompt_carry_module_context():
+    seen = []
+    chunk = {"id": "a.py::f", "source": "def f(): ...", "context": "MAX_BATCH = 100"}
+    LLMDriftChecker(lambda p: seen.append(p) or GOOD).check(chunk, DOC)
+    assert "MODULE CONTEXT" in seen[0] and "MAX_BATCH = 100" in seen[0]
+    LLMVerifier(lambda p: seen.append(p) or "no").verify("claim", "fact", "MAX_BATCH = 100")
+    assert "MAX_BATCH = 100" in seen[1] and "Does the first directly contradict the second" in seen[1]
+
+
+def test_prompts_omit_context_block_when_empty():
+    seen = []
+    LLMDriftChecker(lambda p: seen.append(p) or GOOD).check({"id": "a.py::f", "source": "x", "context": ""}, DOC)
+    LLMVerifier(lambda p: seen.append(p) or "no").verify("claim", "fact")
+    assert "MODULE CONTEXT" not in seen[0] and "Module context" not in seen[1]
+
+
+def test_check_drift_passes_context_to_verifier(tmp_path):
+    code, docs, _ = load("12_non_function_symbols")
+    got = []
+
+    class Spy:
+        def verify(self, claim, fact, context=""):
+            got.append(context)
+            return True
+
+    check_drift(code, docs, DocIndex(tmp_path / "c", FakeEmbedder()), Canned(claim_verdict(doc_claim="`POST /v1/batches` runs")), verifier=Spy(),
+                identifiers=code_identifiers_dir(FIXTURES / "12_non_function_symbols" / "src"))
+    assert got and "max_batch_size = 100" in got[0] and "Settings: retry_limit: int = 3" in got[0]

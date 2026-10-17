@@ -11,7 +11,7 @@ PROMPT = """You check whether documentation accurately describes code.
 
 CODE ({code_id}):
 {code}
-
+{context_block}
 DOCUMENTATION SECTION ({doc_id}):
 {doc}
 
@@ -81,14 +81,25 @@ class DriftChecker(Protocol):
     def check(self, code_chunk: dict, doc_chunk: dict) -> Verdict: ...
 
 
+CONTEXT_BLOCK = """
+MODULE CONTEXT (other definitions from the same file: assignments, class attributes and signatures only, not full code):
+{context}
+"""
+
+VERIFY_CONTEXT_BLOCK = """Module context (other definitions from the same file: assignments, class attributes and signatures only):
+{context}
+
+"""
+
+
 class Verifier(Protocol):
-    def verify(self, doc_claim: str, code_fact: str) -> bool: ...
+    def verify(self, doc_claim: str, code_fact: str, context: str = "") -> bool: ...
 
 
 VERIFY_PROMPT = """Documentation claim: {doc_claim}
 Code fact: {code_fact}
 
-Does the first directly contradict the second? Answer yes or no."""
+{context_block}Does the first directly contradict the second? Answer yes or no."""
 
 
 class LLMVerifier:
@@ -97,9 +108,10 @@ class LLMVerifier:
     def __init__(self, complete: Callable[[str], str]):
         self.complete = complete
 
-    def verify(self, doc_claim: str, code_fact: str) -> bool:
+    def verify(self, doc_claim: str, code_fact: str, context: str = "") -> bool:
+        block = VERIFY_CONTEXT_BLOCK.format(context=context) if context else ""
         try:
-            text = self.complete(VERIFY_PROMPT.format(doc_claim=doc_claim, code_fact=code_fact))
+            text = self.complete(VERIFY_PROMPT.format(doc_claim=doc_claim, code_fact=code_fact, context_block=block))
         except CallBudgetExceeded:
             raise
         except Exception as e:
@@ -111,7 +123,7 @@ class FakeVerifier:
     def __init__(self, answer: bool = True):
         self.answer = answer
 
-    def verify(self, doc_claim: str, code_fact: str) -> bool:
+    def verify(self, doc_claim: str, code_fact: str, context: str = "") -> bool:
         return self.answer
 
 
@@ -136,7 +148,9 @@ class LLMDriftChecker:
         self.complete = complete
 
     def check(self, code_chunk: dict, doc_chunk: dict) -> Verdict:
+        context = code_chunk.get("context", "")
         prompt = PROMPT.format(code_id=code_chunk["id"], code=code_chunk["source"],
+                               context_block=CONTEXT_BLOCK.format(context=context) if context else "",
                                doc_id=doc_chunk["id"], doc=doc_chunk["content"])
         last = ""
         for attempt in range(2):  # retry once on malformed output
@@ -284,7 +298,7 @@ def check_drift(code_chunks: list[dict], doc_chunks: list[dict], index: DocIndex
             v = checker.check(code, doc)
             filtered = v.is_stale and not claim_is_grounded(v, doc)
             rejected = (v.is_stale and not filtered and verifier is not None
-                        and not verifier.verify(v.doc_claim, v.code_fact))
+                        and not verifier.verify(v.doc_claim, v.code_fact, code.get("context", "")))
             results.append(DriftResult(code_id=code["id"], doc_id=doc["id"], detection="llm",
                                        **{**v.model_dump(), "is_stale": v.is_stale and not (filtered or rejected)},
                                        filtered=filtered, verifier_rejected=rejected))

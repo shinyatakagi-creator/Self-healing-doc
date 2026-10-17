@@ -1,7 +1,9 @@
 import argparse
+import os
 import tempfile
 from pathlib import Path
 
+import git
 from dotenv import load_dotenv
 
 from shd.chunk_code import chunk_code, chunk_code_dir, code_identifiers_dir, code_identifiers
@@ -22,6 +24,19 @@ def run_check_chunks(code: list[dict], docs: list[dict], embedder: Embedder, che
                      verifier: Verifier | None = None, identifiers: set[str] | None = None) -> tuple[list[dict], list[DriftResult]]:
     with tempfile.TemporaryDirectory() as tmp:
         return docs, check_drift(code, docs, DocIndex(tmp, embedder), checker, verifier=verifier, identifiers=identifiers)
+
+
+def base_dir(paths: list[Path]) -> Path:
+    """Chunk IDs are relative to this. The git root containing the first path if it holds all of them,
+    otherwise the common parent folder."""
+    resolved = [p.resolve() for p in paths]
+    try:
+        root = Path(git.Repo(resolved[0], search_parent_directories=True).working_tree_dir).resolve()
+        if all(p.is_relative_to(root) for p in resolved):
+            return root
+    except (git.InvalidGitRepositoryError, git.NoSuchPathError):
+        pass
+    return Path(os.path.commonpath([p.parent for p in resolved]))
 
 
 def chunks_from_paths(code_paths: list[Path], docs_paths: list[Path], root: Path) -> tuple[list[dict], list[dict], set[str]]:
@@ -55,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.fixture:
         docs, results = run_check(args.fixture, embedder, checker, verifier)
     else:
-        code, docs, identifiers = chunks_from_paths(args.code, args.docs, Path.cwd())
+        code, docs, identifiers = chunks_from_paths(args.code, args.docs, base_dir(args.code + args.docs))
         docs, results = run_check_chunks(code, docs, embedder, checker, verifier, identifiers)
     print_summary(docs, results)
     write_report(results, args.out)

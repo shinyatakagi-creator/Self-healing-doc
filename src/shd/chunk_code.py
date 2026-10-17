@@ -36,6 +36,52 @@ def _params(args: ast.arguments) -> list[dict]:
     return params
 
 
+CONTEXT_CAP = 2000
+
+
+def _short(text: str, n: int = 160) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[: n - 3] + "..."
+
+
+def _signature(node: ast.AST, name: str) -> str:
+    if isinstance(node, ast.ClassDef):
+        bases = ", ".join(ast.unparse(b) for b in node.bases)
+        return f"class {name}({bases})" if bases else f"class {name}"
+    kind = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+    ret = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+    return _short(f"{kind} {name}({ast.unparse(node.args)}){ret}")
+
+
+def module_context(tree: ast.Module, exclude: str = "") -> str:
+    """Bounded view of the rest of a file: module-level assignments with values, class attributes and
+    dataclass fields, then signatures (no bodies) of other functions and classes. Capped at CONTEXT_CAP chars."""
+    assigns, fields, sigs = [], [], []
+
+    def walk(node: ast.AST, prefix: str, module_level: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.Assign, ast.AnnAssign)) and module_level:
+                assigns.append(_short(ast.unparse(child)))
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                name = prefix + child.name
+                if name != exclude:
+                    sigs.append(_signature(child, name))
+                if isinstance(child, ast.ClassDef):
+                    for stmt in child.body:
+                        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+                            fields.append(f"{name}: {_short(ast.unparse(stmt))}")
+                walk(child, name + ".", False)
+
+    walk(tree, "", True)
+    lines, size = [], 0
+    for line in assigns + fields + sigs:
+        if size + len(line) + 1 > CONTEXT_CAP:
+            break
+        lines.append(line)
+        size += len(line) + 1
+    return "\n".join(lines)
+
+
 def chunk_code(filepath: str | Path, root: str | Path | None = None) -> list[dict]:
     """One chunk per function. ID is `<path relative to root>::<name>`;
     nested functions and methods use dotted names (`outer.inner`)."""
@@ -60,6 +106,7 @@ def chunk_code(filepath: str | Path, root: str | Path | None = None) -> list[dic
                     "signature": ast.unparse(child.args),
                     "docstring": ast.get_docstring(child) or "",
                     "source": ast.unparse(child),
+                    "context": module_context(tree, name),
                 })
                 visit(child, name + ".")
             elif isinstance(child, ast.ClassDef):
