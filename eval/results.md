@@ -317,3 +317,54 @@ False positive reasons (first seen):
 | pairs per doc | Conventions 5, Assumptions 5, self-healing-docs (CLAUDE) 5, README 3, Run 2 |
 
 The Stage 5 gate (fixtures 01-12 all 5/5 and dogfood 0 flags) was NOT met: 08 failed 0/5 and dogfood had 1 error. Stopped before Phase 5.
+
+## Stage 6 (5 runs): verifier absence rule, confidence fix, stale/review tiers, 12 fixtures
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 5 | LLM calls used 161/400 | verifier on
+
+Pass = every expected doc flagged in either tier AND no stale-tier false positive.
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 5/5 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 5/5 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 5/5 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 5/5 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 5/5 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 5/5 | - | 0 | 0 | 1 |
+| 09_orders_corpus | 1 | 3/5 | FP[stale] docs/api.md::Cancelling orders (2/5) | 0 | 0 | 3 |
+| 10_prose_claim | 1 | 5/5 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 5/5 | - | 0 | 0 | 0 |
+| 12_non_function_symbols | 1 | 5/5 | - | 0 | 0 | 0 |
+
+| Tier / check | Precision | Recall | Note |
+|---|---|---|---|
+| **Stale tier** (reference + LLM flags naming a code element) | 0.95 (35/37) | 0.88 (35/40) |  |
+| Review tier (LLM prose-only flags) | 1.00 (5/5) | 0.12 (5/40) | 5 flags over 5 runs; recall here = stale docs that landed only in this tier |
+| Either tier | 0.95 (40/42) | 1.00 (40/40) | recall counts a detection in either tier |
+| Reference check (stale tier) | 1.00 (20/20) | 0.50 (20/40) |  |
+| LLM check, stale tier | 0.88 (15/17) | 0.75 (15/20) | recall over expected docs the reference check missed |
+
+Filtered flags (claim not grounded): 0 total, 0 on docs that really were stale.
+Verifier rejected flags: 4 total, 0 on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `09_orders_corpus FP[stale] docs/api.md::Cancelling orders`: The documentation states that the 'reason' parameter is optional and empty by default, but the code specifies a default value of an empty string. | claim: 'Params: `reason` (optional, free text, empty by default)'
+
+## Stage 6 dogfood: README.md + CLAUDE.md vs src/shd (1 run)
+
+20 LLM pairs, verifier on.
+
+| Metric | Value |
+|---|---|
+| stale-tier flags | 0 |
+| review-tier flags | 0 |
+| errors | 0 |
+| filtered (claim not grounded) | 2 |
+| verifier rejected | 0 |
+| pairs per doc | Conventions 5, Assumptions 5, self-healing-docs (CLAUDE) 5, README 3, Run 2 |
+
+Per the stopping rule, no further tuning rounds after Stage 6. Known remaining issue: fixture 09 `Cancelling orders` is a stale-tier false positive in 2 of 5 runs ("empty by default" vs `reason: str = ""`; the model treats an equivalent value as a conflict and the verifier agrees).
