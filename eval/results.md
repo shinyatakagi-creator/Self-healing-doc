@@ -271,3 +271,49 @@ False positive reasons (first seen):
 After: 20 pairs, 0 stale flags, 1 filtered (it quoted the eval prompt instead of the doc), 0 verifier-rejected, 0 errors.
 
 Pair counts on the 12 fixtures are identical before and after (max 3 pairs per doc), so the cap only matters on larger corpora.
+
+## Stage 5 (5 runs): module context for drift check and verifier, 12 fixtures
+
+2026-10-17 | provider `openai` model `gpt-4o` | embedder `text-embedding-3-small` | runs 5 | LLM calls used 165/400 | verifier on
+
+| Scenario | Expected stale | Pass rate | Wrong (runs) | Errors | Filtered | Verifier rejected |
+|---|---|---|---|---|---|---|
+| 01_wrong_path_missing_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 02_removed_param | 1 | 5/5 | - | 0 | 0 | 0 |
+| 03_changed_default | 1 | 5/5 | - | 0 | 0 | 0 |
+| 04_deleted_function | 1 | 5/5 | - | 0 | 0 | 0 |
+| 05_clean_match | 0 | 5/5 | - | 0 | 0 | 0 |
+| 06_clean_reworded | 0 | 5/5 | - | 0 | 0 | 0 |
+| 07_unrelated_docs | 0 | 5/5 | - | 0 | 0 | 0 |
+| 08_large_corpus | 1 | 0/5 | FP docs/guide.md::Result pagination (5/5) | 0 | 0 | 0 |
+| 09_orders_corpus | 1 | 5/5 | - | 0 | 0 | 5 |
+| 10_prose_claim | 1 | 5/5 | - | 0 | 0 | 0 |
+| 11_stray_symbols | 0 | 5/5 | - | 0 | 0 | 0 |
+| 12_non_function_symbols | 1 | 5/5 | - | 0 | 0 | 0 |
+
+| Check | Precision | Recall |
+|---|---|---|
+| overall | 0.89 (40/45) | 1.00 (40/40) |
+| reference check | 1.00 (20/20) | 0.50 (20/40) |
+| LLM check (recall over stale docs the reference check missed) | 0.80 (20/25) | 1.00 (20/20) |
+
+Filtered flags (LLM said stale, claim check discarded it): 0 total, 0 of them on docs that really were stale.
+Verifier rejected flags: 5 total, 0 of them on docs that really were stale.
+
+False positive reasons (first seen):
+
+- `08_large_corpus FP docs/guide.md::Result pagination`: The documentation mentions pagination with a next page link, but the code does not implement pagination.
+
+## Stage 5 dogfood: README.md + CLAUDE.md vs src/shd (1 run, module context on)
+
+49+ code chunks, 5 doc sections, 20 LLM pairs, verifier on.
+
+| Metric | Value |
+|---|---|
+| stale flags | 0 |
+| errors | 1 (`CLAUDE.md::Assumptions` x `detect.py::check_drift`: malformed output after retry, `confidence` was `""` on a non-stale answer) |
+| filtered (claim not grounded) | 1 |
+| verifier rejected | 1 |
+| pairs per doc | Conventions 5, Assumptions 5, self-healing-docs (CLAUDE) 5, README 3, Run 2 |
+
+The Stage 5 gate (fixtures 01-12 all 5/5 and dogfood 0 flags) was NOT met: 08 failed 0/5 and dogfood had 1 error. Stopped before Phase 5.
