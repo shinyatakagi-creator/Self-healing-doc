@@ -17,3 +17,7 @@ Detects when code changes make markdown docs inaccurate, points at the stale sec
 - Nested functions and methods use dotted names (`outer.inner`, `Class.method`) so IDs don't collide.
 - Docs split on every heading level; headings inside code fences are ignored; sections with no body are skipped; text before the first heading is `(preamble)`.
 - Doc refs are only extracted from backtick spans.
+- Drift detection has two types: `reference` (deterministic: doc routes/underscore-names missing from the code, no LLM) and `llm` (factual mismatch). Docs already flagged by `reference` skip the LLM call.
+- `FakeDriftChecker` tests are plumbing tests, not accuracy tests. Accuracy is measured by the reference-check tests and the live tests.
+- Reference check limits: bare `/x` paths count as routes, only names containing `_` are checked, config keys and file paths are not.
+- Provider models: `LLM_MODEL` env overrides the per-provider default.

@@ -21,6 +21,7 @@ CODE_TRUTH = {
     "06_clean_reworded": ("src/api.py::search", ("POST", "/v2/search"),
                           {"query": None, "limit": "10", "include_archived": "False"}),
     "07_unrelated_docs": ("src/api.py::search", ("POST", "/v2/search"), {"query": None, "limit": "10"}),
+    "08_large_corpus": ("src/api.py::search", ("POST", "/v2/search"), {"query": None, "limit": "20"}),
 }
 
 

@@ -10,4 +10,4 @@ pytest                 # offline
 pytest -m live         # real API calls
 ```
 
-Status: Phase 2 (embeddings + retrieval). See CLAUDE.md for conventions.
+Status: Phase 3 (drift detection). See CLAUDE.md for conventions.

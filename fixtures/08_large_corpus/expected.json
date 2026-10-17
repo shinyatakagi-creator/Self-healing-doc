@@ -1,0 +1,27 @@
+{
+ "stale": [
+  "docs/api.md::Search endpoint"
+ ],
+ "not_stale": [
+  "docs/guide.md::Installation",
+  "docs/guide.md::Quick start",
+  "docs/guide.md::Searching these docs",
+  "docs/guide.md::Writing good queries",
+  "docs/guide.md::Ranking and relevance",
+  "docs/guide.md::Result pagination",
+  "docs/guide.md::Supported file types",
+  "docs/guide.md::Language support",
+  "docs/ops.md::Deployment",
+  "docs/ops.md::Logging",
+  "docs/ops.md::Monitoring",
+  "docs/ops.md::Backups",
+  "docs/ops.md::Upgrading",
+  "docs/ops.md::Security",
+  "docs/ops.md::Rate limits",
+  "docs/ops.md::Troubleshooting",
+  "docs/ops.md::Contributing",
+  "docs/ops.md::Code of conduct",
+  "docs/ops.md::Release process",
+  "docs/ops.md::Glossary"
+ ]
+}
