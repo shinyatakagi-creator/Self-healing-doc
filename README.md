@@ -36,3 +36,10 @@ Do this on a scratch repo, not this one.
 7. PRs from forks run only the offline tests: forks do not get repo secrets, so the check and comment steps are skipped.
 
 Run locally first: `python -m shd.cli check --base main --code src/shd --docs README.md --docs CLAUDE.md --comment-file /tmp/c.md`
+
+## Known limitations
+
+- **Equivalence false positive (fixture 09):** the LLM can flag a doc that says a param is "empty by default" when the code has `reason: str = ""`. The two are equivalent, but the model treats them as a value conflict and the verifier agrees. It showed up as a stale-tier false positive in 2 of 5 eval runs.
+- **Reference check only covers names with an underscore:** a renamed or removed `search` is not caught by the reference check (single-word names are too often ordinary words). Routes, `snake_case` names and call syntax are covered; config keys and file paths are not checked.
+- **The review tier is too small to measure:** it produced 5 flags across 5 eval runs (all from one fixture), so its precision of 1.00 says little. Treat "Worth a look" as unvalidated.
+- The eval uses 12 small fixtures and gpt-4o only; the anthropic and gemini providers have not been run live.

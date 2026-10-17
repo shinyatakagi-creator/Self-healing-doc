@@ -1,0 +1,53 @@
+name: self-healing-docs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# a new push cancels the in-flight check for the same PR
+concurrency:
+  group: self-healing-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # offline suite only; tests marked `live` are skipped by default
+      - run: pytest
+
+      # forks and dependabot do not get repo secrets, so the check and the comment only run for same-repo, non-dependabot PRs
+      - name: Check docs against the changed code
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BASE_REF: ${{ github.base_ref }}
+        run: >
+          python -m shd.cli check
+          --base "origin/$BASE_REF"
+          --code src/shd --docs README.md --docs CLAUDE.md
+          --max-calls 30
+          --out drift_report.json --comment-file drift_comment.md
+
+      - name: Post or update the PR comment
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python -m shd.post_comment --file drift_comment.md --pr "$PR_NUMBER"
